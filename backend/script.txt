@@ -1,0 +1,25 @@
+@echo off
+REM CALL utils\verify_required_software.cmd --java --kubectl
+REM IF %ERRORLEVEL% NEQ 0 EXIT /B 1
+echo INFO: Calling MTCTL with arguments: %*
+java -cp lib/mtctl.jar ifs.cloud.client.Client %*
+EXIT /B !errorlevel!
+
+
+
+Script: E:\ifsroot\deliveries\ifs-cloud-23.2.6-pemuto8-6.2.0-20250331T161508Z-success\InstallationFiles\ifsinstaller\mtctl.cmd
+Arguments: stop --namespace "tsutst"
+Execution time: 1532ms
+Started: 7/3/2025, 7:27:57 AM
+
+STDOUT:
+INFO: Calling MTCTL with arguments: stop --namespace "tsutst"
+IFS Cloud Applications - Middletier Controller
+Stop deployments
+
+STDERR:
+Thu Jul 03 07:27:58 EDT 2025 L5 - Trying to load scaleObjects......
+Thu Jul 03 07:27:58 EDT 2025 L7 - ERROR
+Thu Jul 03 07:27:58 EDT 2025 L7 - Unable to connect to the server: x509: certificate signed by unknown authority (possibly because of "crypto/rsa: verification error" while trying to verify candidate authority certificate "10.152.183.1") (@ResourceBase.java:31)
+
+--- Execution completed with exit code 0 ---

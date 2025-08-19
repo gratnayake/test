@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Find Oracle Services</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .result { background: #f6f6f6; border: 1px solid #d9d9d9; padding: 15px; margin: 10px 0; border-radius: 4px; }
+        .error { border-color: #ff4d4f; background: #fff2f0; }
+        pre { white-space: pre-wrap; font-size: 12px; }
+        .command { background: #001529; color: #00ff00; padding: 10px; border-radius: 4px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h2>🔍 Find Your Oracle Services</h2>
+    
+    <p>Let's find the correct Oracle service names on your system.</p>
+    
+    <h3>Step 1: Run this command in Command Prompt as Administrator</h3>
+    <div class="command">
+        sc query | findstr Oracle
+    </div>
+    
+    <h3>Step 2: Or this command to get more details</h3>
+    <div class="command">
+        net start | findstr Oracle
+    </div>
+    
+    <h3>Step 3: Test the API with correct service names</h3>
+    <button onclick="testWithCorrectServices()">Test Startup with Correct Services</button>
+    
+    <div id="results"></div>
+
+    <script>
+        function addResult(title, data, type = 'result') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `
+                <h3>${title}</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            results.appendChild(div);
+        }
+
+        async function testWithCorrectServices() {
+            // First let's see what your backend thinks the services are
+            try {
+                const response = await fetch('http://localhost:5001/api/database/operations/startup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                addResult('Startup API Response', {
+                    status: response.status,
+                    data: data
+                }, response.ok ? 'result' : 'error');
+                
+            } catch (error) {
+                addResult('API Error', { error: error.message }, 'error');
+            }
+        }
+    </script>
+
+    <h3>🎯 Manual Service Start (Quick Fix)</h3>
+    <p>Based on your service name, try starting these services manually:</p>
+    
+    <h4>Option 1: Via Services.msc</h4>
+    <ol>
+        <li>Press <code>Windows + R</code>, type <code>services.msc</code>, press <code>Ctrl + Shift + Enter</code></li>
+        <li>Look for services starting with "Oracle"</li>
+        <li>Start these services (right-click → Start):
+            <ul>
+                <li><strong>OracleServiceXE</strong> (or similar with "Service" in the name)</li>
+                <li><strong>OracleOraDB21Home1TNSListener</strong> (the one you found)</li>
+            </ul>
+        </li>
+    </ol>
+    
+    <h4>Option 2: Via Command Prompt as Administrator</h4>
+    <div class="command">
+        net start "OracleServiceXE"
+        net start "OracleOraDB21Home1TNSListener"
+    </div>
+    
+    <p><strong>Note:</strong> The exact service names might be slightly different. Look for:</p>
+    <ul>
+        <li>A service with "Service" in the name (this is the main database service)</li>
+        <li>A service with "TNSListener" in the name (this is the network listener)</li>
+    </ul>
+</body>
+</html>

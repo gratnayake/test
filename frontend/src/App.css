@@ -1,0 +1,292 @@
+/* App.css */
+@import '~antd/dist/reset.css';
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Theme Variables - Modern Dark Theme */
+:root {
+  --bg-color: #ffffff;
+  --text-color: #000000;
+  --border-color: #d9d9d9;
+  --card-bg: #ffffff;
+  --header-bg: #ffffff;
+}
+
+.dark-theme {
+  --bg-color: #000000;
+  --text-color: #ffffff;
+  --border-color: #303030;
+  --card-bg: #141414;
+  --header-bg: #141414;
+}
+
+/* Custom styles for the Oracle Monitor */
+.oracle-monitor-layout {
+  min-height: 100vh;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.oracle-monitor-sider {
+  background: var(--card-bg);
+}
+
+.oracle-monitor-header {
+  background: var(--header-bg);
+  padding: 0 24px;
+  box-shadow: var(--header-shadow);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.oracle-monitor-content {
+  margin: 24px;
+  background: var(--bg-color);
+  min-height: calc(100vh - 112px);
+}
+
+/* Login Container */
+.login-container {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: all 0.3s ease;
+}
+
+.dark-theme .login-container {
+  background: linear-gradient(135deg, #1f1f1f 0%, #141414 100%);
+}
+
+.login-card {
+  width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: var(--card-border);
+}
+
+.dark-theme .login-card {
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  border: 1px solid var(--border-color);
+}
+
+/* Logo Section */
+.logo-section {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.logo-icon {
+  font-size: 64px;
+  color: #1890ff;
+  margin-bottom: 16px;
+}
+
+/* Status Cards */
+.status-card {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.status-icon {
+  font-size: 72px;
+  margin-bottom: 16px;
+}
+
+.status-online {
+  color: #52c41a;
+}
+
+.status-offline {
+  color: #ff4d4f;
+}
+
+/* User Avatar */
+.user-avatar {
+  background-color: #1890ff;
+}
+
+/* Dashboard Stats */
+.dashboard-stats {
+  margin-bottom: 24px;
+}
+
+/* Database Details */
+.database-details {
+  padding: 20px 0;
+}
+
+.database-details p {
+  margin-bottom: 8px;
+  color: var(--text-color);
+}
+
+/* User Management */
+.user-management-header {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-form {
+  max-width: 600px;
+}
+
+/* Theme Toggle Animations */
+.theme-toggle-enter {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.theme-toggle-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: all 0.3s ease;
+}
+
+.theme-toggle-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.theme-toggle-exit-active {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.3s ease;
+}
+
+/* Dark Mode Specific Styles */
+.dark-theme .ant-layout {
+  background: #141414;
+}
+
+.dark-theme .ant-layout-header {
+  background: #001529;
+  border-bottom: 1px solid #303030;
+}
+
+.dark-theme .ant-layout-content {
+  background: #141414;
+}
+
+.dark-theme .ant-card {
+  background: #1f1f1f;
+  border-color: #303030;
+}
+
+.dark-theme .ant-table {
+  background: #1f1f1f;
+}
+
+.dark-theme .ant-table-thead > tr > th {
+  background: #262626;
+  color: #ffffff;
+  border-color: #303030;
+}
+
+.dark-theme .ant-table-tbody > tr > td {
+  background: #1f1f1f;
+  color: #ffffff;
+  border-color: #303030;
+}
+
+.dark-theme .ant-table-tbody > tr:hover > td {
+  background: #262626;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .oracle-monitor-content {
+    margin: 16px;
+    padding: 16px;
+  }
+  
+  .login-card {
+    width: 90%;
+    margin: 0 20px;
+  }
+  
+  .user-management-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .user-management-header .ant-typography {
+    margin-bottom: 16px;
+  }
+}
+
+/* Loading states */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.dark-theme .loading-overlay {
+  background: rgba(20, 20, 20, 0.8);
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #1890ff;
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
