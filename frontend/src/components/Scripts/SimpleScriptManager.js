@@ -152,7 +152,7 @@ const SimpleScriptManager = () => {
     if (!dbOperationsStatus?.config?.isConfigured) {
       return (
         <Alert
-          message="Database Not Configured"
+          message="Database Not Configured gira"
           description="Please configure database connection in Database Config to enable database operations."
           type="warning"
           showIcon
