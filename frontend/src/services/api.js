@@ -436,43 +436,121 @@ export const simpleScriptAPI = {
 
 
 export const databaseOperationsAPI = {
-getStatus: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/database/operations/status`);
-    return response.json();
+  // Get database operations status
+  getStatus: async () => {
+    try {
+      console.log('📊 Getting database operations status...');
+      const response = await api.get('/api/database/operations/status');
+      console.log('✅ Database operations status retrieved:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to get database operations status:', error);
+      if (error.response?.data) {
+        throw new Error(error.response.data.error || 'Failed to get status');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
+    }
   },
-  
+
+  // Shutdown database
   shutdown: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/database/operations/shutdown`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return response.json();
+    try {
+      console.log('🔴 Initiating database shutdown...');
+      const response = await api.post('/api/database/operations/shutdown', {}, {
+        timeout: 60000 // 60 seconds timeout for shutdown
+      });
+      console.log('✅ Database shutdown response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Database shutdown failed:', error);
+      
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('Database shutdown timed out');
+      } else if (error.response?.data) {
+        throw new Error(error.response.data.error || 'Database shutdown failed');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
+    }
   },
-  
+
+  // Startup database
   startup: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/database/operations/startup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return response.json();
+    try {
+      console.log('🟢 Initiating database startup...');
+      const response = await api.post('/api/database/operations/startup', {}, {
+        timeout: 90000 // 90 seconds timeout for startup
+      });
+      console.log('✅ Database startup response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Database startup failed:', error);
+      
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('Database startup timed out');
+      } else if (error.response?.data) {
+        throw new Error(error.response.data.error || 'Database startup failed');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
+    }
   },
-  
+
+  // Test database connection
   test: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/database/operations/test`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return response.json();
+    try {
+      console.log('🧪 Testing database operations configuration...');
+      const response = await api.post('/api/database/operations/test', {}, {
+        timeout: 15000 // 15 seconds timeout
+      });
+      console.log('✅ Database test completed:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Database test failed:', error);
+      
+      if (error.response?.data) {
+        throw new Error(error.response.data.error || 'Database test failed');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
+    }
   },
-  
+
+  // Validate configuration (if you need this endpoint)
   validate: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/database/operations/validate`);
-    return response.json();
+    try {
+      console.log('🔍 Validating database operations configuration...');
+      const response = await api.get('/api/database/operations/validate');
+      console.log('✅ Validation completed:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Validation failed:', error);
+      
+      if (error.response?.data) {
+        throw new Error(error.response.data.error || 'Validation failed');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
+    }
   },
-  
+
+  // Check database status (if you need this endpoint)
   checkStatus: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/database/operations/check-status`);
-    return response.json();
+    try {
+      console.log('🔍 Checking database status...');
+      const response = await api.get('/api/database/operations/check-status');
+      console.log('✅ Status check completed:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Status check failed:', error);
+      
+      if (error.response?.data) {
+        throw new Error(error.response.data.error || 'Status check failed');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
+    }
   }
 };
 
