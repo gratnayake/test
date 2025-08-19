@@ -75,7 +75,6 @@ const SimpleScriptManager = () => {
     loadDatabaseOperationsStatus();
   }, []);
 
-  // FIXED: Load database operations status
   const loadDatabaseOperationsStatus = async () => {
     try {
       const { databaseOperationsAPI } = await import('../../services/api');
@@ -95,80 +94,37 @@ const SimpleScriptManager = () => {
   // Database shutdown operation
   const handleDatabaseShutdown = async () => {
     setDbOperationLoading(true);
-    setOutputModal({ 
-      visible: true, 
-      script: { name: 'Database Shutdown', scriptPath: 'SHUTDOWN IMMEDIATE' }, 
-      output: 'Initiating database shutdown...\n', 
-      loading: true 
-    });
-    
     try {
       const { databaseOperationsAPI } = await import('../../services/api');
-      const result = await databaseOperationsAPI.shutdownImmediate();
+      const response = await databaseOperationsAPI.shutdown();
       
-      setOutputModal(prev => ({
-        ...prev,
-        output: prev.output + `\n${result.output}\n\n--- Operation completed ---`,
-        loading: false
-      }));
-      
-      if (result.success) {
-        message.success('Database shutdown completed successfully!');
+      if (response.success) {
+        message.success('Database shutdown initiated successfully');
       } else {
-        message.error('Database shutdown failed!');
+        message.error(response.error || 'Failed to shutdown database');
       }
-      
-      // Refresh status
-      await loadDatabaseOperationsStatus();
-      
     } catch (error) {
-      setOutputModal(prev => ({
-        ...prev,
-        output: prev.output + `\nError: ${error.message}`,
-        loading: false
-      }));
-      message.error(`Database shutdown failed: ${error.message}`);
+      console.error('Database shutdown error:', error);
+      message.error('Failed to shutdown database');
     } finally {
       setDbOperationLoading(false);
     }
   };
 
-  // Database startup operation
   const handleDatabaseStartup = async () => {
     setDbOperationLoading(true);
-    setOutputModal({ 
-      visible: true, 
-      script: { name: 'Database Startup', scriptPath: 'STARTUP' }, 
-      output: 'Initiating database startup...\n', 
-      loading: true 
-    });
-    
     try {
       const { databaseOperationsAPI } = await import('../../services/api');
-      const result = await databaseOperationsAPI.startup();
+      const response = await databaseOperationsAPI.startup();
       
-      setOutputModal(prev => ({
-        ...prev,
-        output: prev.output + `\n${result.output}\n\n--- Operation completed ---`,
-        loading: false
-      }));
-      
-      if (result.success) {
-        message.success('Database startup completed successfully!');
+      if (response.success) {
+        message.success('Database startup initiated successfully');
       } else {
-        message.error('Database startup failed!');
+        message.error(response.error || 'Failed to startup database');
       }
-      
-      // Refresh status
-      await loadDatabaseOperationsStatus();
-      
     } catch (error) {
-      setOutputModal(prev => ({
-        ...prev,
-        output: prev.output + `\nError: ${error.message}`,
-        loading: false
-      }));
-      message.error(`Database startup failed: ${error.message}`);
+      console.error('Database startup error:', error);
+      message.error('Failed to startup database');
     } finally {
       setDbOperationLoading(false);
     }
@@ -191,10 +147,9 @@ const SimpleScriptManager = () => {
 
   // COMPLETELY FIXED: Render Database Operations Panel
   const renderDatabaseOperations = () => {
-    console.log('🔍 Current dbOperationsStatus:', dbOperationsStatus); // Debug log
-    
-    // FIXED: Check the correct path for configuration status
-    if (!dbOperationsStatus?.configInfo?.isConfigured) {
+    // The issue is here - the response object structure needs to be checked correctly
+    // Based on your API response, it should be response.config that contains the configuration
+    if (!dbOperationsStatus?.config?.isConfigured) {
       return (
         <Alert
           message="Database Not Configured"
@@ -207,15 +162,11 @@ const SimpleScriptManager = () => {
     }
 
     const getStatusColor = () => {
-      // FIXED: Check the correct configuration path
-      if (dbOperationsStatus?.configInfo?.isConfigured) return 'success';
-      return 'error';
+      return dbOperationsStatus.config.isConfigured ? 'success' : 'error';
     };
 
     const getStatusText = () => {
-      // FIXED: Check the correct configuration path  
-      if (dbOperationsStatus?.configInfo?.isConfigured) return 'CONFIGURED';
-      return 'NOT CONFIGURED';
+      return dbOperationsStatus.config.isConfigured ? 'CONFIGURED' : 'NOT CONFIGURED';
     };
 
     return (
@@ -242,12 +193,11 @@ const SimpleScriptManager = () => {
             <Space direction="vertical" size="small">
               <Text strong>Connection:</Text>
               <Text code style={{ fontSize: '12px' }}>
-                {/* FIXED: Use the correct data structure */}
-                {dbOperationsStatus?.configInfo?.host}:{dbOperationsStatus?.configInfo?.port}/{dbOperationsStatus?.configInfo?.serviceName}
+                {dbOperationsStatus.config.host}:{dbOperationsStatus.config.port}/{dbOperationsStatus.config.serviceName}
               </Text>
               <Text type="secondary" style={{ fontSize: '12px' }}>
-                {/* FIXED: Show proper status information */}
-                SYS User: {dbOperationsStatus?.configInfo?.sysUsername} | Password: {dbOperationsStatus?.configInfo?.sysPasswordConfigured ? 'Configured' : 'Not Set'}
+                SYS User: {dbOperationsStatus.config.sysUsername || 'Not Set'} | 
+                Password: {dbOperationsStatus.config.sysPasswordConfigured ? 'Configured' : 'Not Set'}
               </Text>
             </Space>
           </Col>
@@ -257,36 +207,53 @@ const SimpleScriptManager = () => {
                 title="Shutdown Database"
                 description="This will perform SHUTDOWN IMMEDIATE. Are you sure?"
                 onConfirm={handleDatabaseShutdown}
-                okText="Shutdown"
-                cancelText="Cancel"
-                okButtonProps={{ danger: true }}
-                disabled={dbOperationLoading}
+                okText="Yes"
+                cancelText="No"
               >
                 <Button 
-                  danger
+                  danger 
                   icon={<PoweroffOutlined />}
                   loading={dbOperationLoading}
-                  disabled={dbOperationLoading}
+                  disabled={dbOperationLoading || !dbOperationsStatus.config.sysPasswordConfigured}
                 >
                   Shutdown
                 </Button>
               </Popconfirm>
               
-              <Button 
-                type="primary"
-                icon={<ThunderboltOutlined />}
-                onClick={handleDatabaseStartup}
-                loading={dbOperationLoading}
-                disabled={dbOperationLoading}
+              <Popconfirm
+                title="Startup Database"
+                description="This will start the Oracle database. Continue?"
+                onConfirm={handleDatabaseStartup}
+                okText="Yes"
+                cancelText="No"
               >
-                Startup
-              </Button>
+                <Button 
+                  type="primary" 
+                  icon={<PlayCircleOutlined />}
+                  loading={dbOperationLoading}
+                  disabled={dbOperationLoading || !dbOperationsStatus.config.sysPasswordConfigured}
+                >
+                  Startup
+                </Button>
+              </Popconfirm>
             </Space>
           </Col>
         </Row>
+        
+        {/* Show warning if SYS credentials not configured */}
+        {dbOperationsStatus.config.isConfigured && !dbOperationsStatus.config.sysPasswordConfigured && (
+          <Alert
+            message="SYS credentials required"
+            description="Please configure SYS user credentials in Database Config to enable startup/shutdown operations."
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
+        )}
       </Card>
     );
   };
+
  
   // Render Kubernetes status indicator
   const renderKubernetesStatus = () => {
