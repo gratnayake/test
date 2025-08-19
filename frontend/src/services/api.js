@@ -1,4 +1,4 @@
-import axios from 'axios';
+ import axios from 'axios';
 
 // Configure axios
 const api = axios.create({
@@ -436,22 +436,43 @@ export const simpleScriptAPI = {
 
 
 export const databaseOperationsAPI = {
-  // Get database operations status
-  getStatus: async () => {
-    const response = await api.get('/api/database/operations/config');
-    return response.data;
+getStatus: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/database/operations/status`);
+    return response.json();
   },
-
-  // Shutdown database immediately
-  shutdownImmediate: async () => {
-    const response = await api.post('/api/database/operations/shutdown');
-    return response.data;
+  
+  shutdown: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/database/operations/shutdown`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return response.json();
   },
-
-  // Startup database
+  
   startup: async () => {
-    const response = await api.post('/api/database/operations/startup');
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/api/database/operations/startup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return response.json();
+  },
+  
+  test: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/database/operations/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return response.json();
+  },
+  
+  validate: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/database/operations/validate`);
+    return response.json();
+  },
+  
+  checkStatus: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/database/operations/check-status`);
+    return response.json();
   }
 };
 

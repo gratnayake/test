@@ -1742,6 +1742,46 @@ app.post('/api/database/operations/restart', async (req, res) => {
   }
 });
 
+app.get('/api/database/operations/validate', (req, res) => {
+  try {
+    console.log('🔍 Validating database operations configuration...');
+    
+    const validation = databaseOperationsService.validateConfig();
+    
+    res.json({
+      success: validation.isValid,
+      isValid: validation.isValid,
+      missingItems: validation.missingItems,
+      configInfo: validation.configInfo
+    });
+  } catch (error) {
+    console.error('❌ Validation error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/database/operations/check-status', async (req, res) => {
+  try {
+    console.log('🔍 Checking database status...');
+    
+    const statusResult = await databaseOperationsService.checkDatabaseStatusLocal();
+    
+    res.json({
+      success: true,
+      ...statusResult
+    });
+  } catch (error) {
+    console.error('❌ Status check error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/database/operations/test-connection', async (req, res) => {
   try {
     console.log('🧪 Database SYS connection test requested');
