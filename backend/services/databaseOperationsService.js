@@ -328,9 +328,23 @@ EXIT;`;
 
     // Step 5: Generate appropriate startup script based on database type
     console.log('📝 Generating startup script...');
+    const needsQuoting = /[^a-zA-Z0-9_]/.test(sysPassword);
+    let connectCommand;
+
+    if (needsQuoting) {
+      // Password has special characters - use quotes
+      connectCommand = `CONNECT ${sysUsername}/"${sysPassword}" AS SYSDBA`;
+      console.log('📝 Using quoted password (contains special characters)');
+    } else {
+      // Simple password
+      connectCommand = `CONNECT ${sysUsername}/${sysPassword} AS SYSDBA`;
+      console.log('📝 Using standard password format');
+    }
+
+    // Build the startup script
+    let startupScript = `${connectCommand}
+    STARTUP;`;
     
-    let startupScript = `CONNECT ${sysUsername}/${sysPassword} AS SYSDBA
-STARTUP;`;
 
     // Add PDB commands based on database type and configuration
     if (dbType.isCDB || dbConfig.serviceName.includes('PDB')) {
@@ -350,6 +364,10 @@ STARTUP;`;
 
     startupScript += `\nEXIT;`;
 
+    console.log('📝 Generated startup script:');
+    console.log('---START SCRIPT---');
+    console.log(startupScript.replace(sysPassword, '***HIDDEN***'));
+    console.log('---END SCRIPT---');
     // Step 6: Execute startup using script file method
     console.log('🚀 Executing STARTUP using script file method...');
     
