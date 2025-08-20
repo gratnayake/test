@@ -425,7 +425,7 @@ async sendPodRestartEmail(pod, restartsIncrease, emailGroupId) {
 
 
   // Enhanced checkPodHealth - now monitors workloads
- async checkPodHealth() {
+async checkPodHealth() {
   try {
     console.log('☸️ Checking Kubernetes workload health...');
     
@@ -441,12 +441,11 @@ async sendPodRestartEmail(pod, restartsIncrease, emailGroupId) {
     const currentPods = await kubernetesService.getAllPods();
     console.log(`✅ Retrieved ${currentPods.length} pods from cluster`);
 
-
     console.log(`🔍 DEBUG: About to call trackPodRestarts with emailGroupId: ${config.emailGroupId}`);
     console.log(`🔍 DEBUG: restartAlertConfig exists:`, !!this.restartAlertConfig);
     console.log(`🔍 DEBUG: podRestartTracking exists:`, !!this.podRestartTracking);
 
-    // ADD THIS LINE: Track pod restarts BEFORE workload analysis
+    // Track pod restarts BEFORE workload analysis
     try {
       await this.trackPodRestarts(currentPods, config.emailGroupId);
       console.log(`🔍 DEBUG: trackPodRestarts completed successfully`);
@@ -454,11 +453,12 @@ async sendPodRestartEmail(pod, restartsIncrease, emailGroupId) {
       console.log(`🔍 DEBUG: trackPodRestarts failed:`, error);
     }
 
-    await this.checkForMissingWorkloadsImmediate(currentWorkloads, config.emailGroupId);
-
-    // Group pods by workload for comparison
+    // Group pods by workload for comparison - DECLARE currentWorkloads HERE
     const currentWorkloads = this.groupPodsByWorkload(currentPods);
     console.log(`📊 Grouped into ${currentWorkloads.length} workloads`);
+
+    // NOW you can check for missing workloads - AFTER currentWorkloads is declared
+    await this.checkForMissingWorkloadsImmediate(currentWorkloads, config.emailGroupId);
 
     // Compare with previous state and detect changes
     for (const workload of currentWorkloads) {
@@ -490,11 +490,16 @@ async sendPodRestartEmail(pod, restartsIncrease, emailGroupId) {
 }
 
 async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
-  if (!emailGroupId) return;
+  if (!emailGroupId) {
+    console.log('⚠️ No email group configured, skipping missing workload check');
+    return;
+  }
 
   const currentKeys = new Set(
     currentWorkloads.map(w => `${w.type}/${w.name}/${w.namespace}`)
   );
+
+  console.log(`🔍 Checking for missing workloads. Current: ${currentKeys.size}, Previous: ${this.workloadStatuses.size}`);
 
   // Check each previously known workload
   for (const [key, previousWorkload] of this.workloadStatuses) {
@@ -509,13 +514,23 @@ async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
         
         if (wasHealthy) {
           console.log(`🛑 WORKLOAD STOPPED/MISSING: ${key} - sending immediate alert!`);
+          console.log(`   Was: ${previousWorkload.readyReplicas}/${previousWorkload.desiredReplicas} ready`);
+          console.log(`   Last seen: ${timeSinceLastSeen}ms ago`);
           
           // Send immediate alert (like restart alerts do)
           await this.sendWorkloadStoppedAlertImmediate(previousWorkload, emailGroupId);
           
-          // Remove from tracking to prevent duplicate alerts
-          this.workloadStatuses.delete(key);
+          // Mark as alerted to prevent duplicates
+          this.workloadStatuses.set(key, {
+            ...previousWorkload,
+            alertedAsStopped: true,
+            stoppedAt: new Date()
+          });
+        } else {
+          console.log(`📊 Workload ${key} was missing but wasn't healthy before (${previousWorkload.readyReplicas} ready)`);
         }
+      } else {
+        console.log(`🕐 Old workload ${key} missing for ${timeSinceLastSeen}ms - too old to alert`);
       }
     }
   }
