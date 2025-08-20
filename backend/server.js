@@ -1655,15 +1655,52 @@ app.post('/api/validate-script-path', (req, res) => {
 });
 
 // Get database operations status
-app.get('/api/database/operations/status', async (req, res) => {
+app.get('/api/database/operations/status', (req, res) => {
   try {
-    const status = await databaseOperationsService.getStatus(); 
-    res.json(status);
+    console.log('📊 Getting database operations status...');
+    
+    // Check if environment variables are set
+    const hasUsername = !!process.env.DB_RESTART_USERNAME;
+    const hasPassword = !!process.env.DB_RESTART_PASSWORD;
+    
+    console.log('  - DB_RESTART_USERNAME:', hasUsername ? 'SET' : 'NOT SET');
+    console.log('  - DB_RESTART_PASSWORD:', hasPassword ? 'SET' : 'NOT SET');
+    
+    if (!hasUsername || !hasPassword) {
+      // Return error but with a config object structure
+      return res.json({
+        success: false,
+        error: 'SYS credentials not configured in environment variables',
+        config: {
+          isConfigured: false,
+          host: 'Not available',
+          port: 'Not available',
+          serviceName: 'Not available',
+          sysUsername: hasUsername ? process.env.DB_RESTART_USERNAME : 'NOT SET',
+          sysPasswordConfigured: hasPassword,
+          errorMessage: 'Missing DB_RESTART_USERNAME or DB_RESTART_PASSWORD in .env file'
+        }
+      });
+    }
+    
+    // Get the configuration info from the service
+    const configInfo = databaseOperationsService.getConfigInfo();
+    
+    console.log('📊 Config info:', configInfo);
+    
+    res.json({
+      success: true,
+      config: configInfo
+    });
   } catch (error) {
-    console.error('❌ Database operations status error:', error);
+    console.error('❌ Error getting database operations status:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      config: {
+        isConfigured: false,
+        errorMessage: error.message
+      }
     });
   }
 });
