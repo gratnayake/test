@@ -76,27 +76,38 @@ const SimpleScriptManager = () => {
   }, []);
 
   const loadDatabaseOperationsStatus = async () => {
+    console.log('🚀 loadDatabaseOperationsStatus STARTED');
     try {
+      console.log('📦 Importing databaseOperationsAPI...');
       const { databaseOperationsAPI } = await import('../../services/api');
-      const response = await databaseOperationsAPI.getStatus();
-      console.log('🔍 Database operations API response:', response); // Debug log
       
-      console.log('🔍 Raw API response:', response);
+      console.log('📡 Calling getStatus()...');
+      const response = await databaseOperationsAPI.getStatus();
+      
+      console.log('🔍 API Response received:', response);
       console.log('🔍 Response type:', typeof response);
-      console.log('🔍 Response keys:', Object.keys(response))
-
-
-      if (response.config) {
-      console.log('📊 config object:', response.config);
-      console.log('📊 config.isConfigured:', response.config.isConfigured);
-    }
-
-      if (response.success) {
-        // FIXED: Set the entire response object instead of response.status
-        setDbOperationsStatus(response);
+      console.log('🔍 Response keys:', response ? Object.keys(response) : 'Response is null/undefined');
+      
+      if (response) {
+        if (response.success) {
+          console.log('✅ Response successful, setting state to:', response);
+          setDbOperationsStatus(response);
+        } else {
+          console.log('⚠️ Response not successful:', response);
+          setDbOperationsStatus(null);
+        }
+      } else {
+        console.log('❌ Response is null/undefined');
+        setDbOperationsStatus(null);
       }
     } catch (error) {
-      console.error('Failed to load database operations status:', error);
+      console.error('❌ loadDatabaseOperationsStatus FAILED:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        response: error.response,
+        data: error.response?.data
+      });
       setDbOperationsStatus(null);
     }
   };
