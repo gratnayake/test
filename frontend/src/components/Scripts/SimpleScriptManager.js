@@ -81,6 +81,16 @@ const SimpleScriptManager = () => {
       const response = await databaseOperationsAPI.getStatus();
       console.log('🔍 Database operations API response:', response); // Debug log
       
+      console.log('🔍 Raw API response:', response);
+      console.log('🔍 Response type:', typeof response);
+      console.log('🔍 Response keys:', Object.keys(response))
+
+
+      if (response.config) {
+      console.log('📊 config object:', response.config);
+      console.log('📊 config.isConfigured:', response.config.isConfigured);
+    }
+
       if (response.success) {
         // FIXED: Set the entire response object instead of response.status
         setDbOperationsStatus(response);
@@ -91,6 +101,16 @@ const SimpleScriptManager = () => {
     }
   };
 
+  useEffect(() => {
+    console.log('🎯 dbOperationsStatus state updated:', dbOperationsStatus);
+    if (dbOperationsStatus) {
+      console.log('  - Has config?', !!dbOperationsStatus.config);
+      console.log('  - config value:', dbOperationsStatus.config);
+      if (dbOperationsStatus.config) {
+        console.log('  - isConfigured?', dbOperationsStatus.config.isConfigured);
+      }
+    }
+  }, [dbOperationsStatus]);
   // Database shutdown operation
   const handleDatabaseShutdown = async () => {
     setDbOperationLoading(true);
@@ -149,6 +169,11 @@ const SimpleScriptManager = () => {
   const renderDatabaseOperations = () => {
     // The issue is here - the response object structure needs to be checked correctly
     // Based on your API response, it should be response.config that contains the configuration
+    console.log('🎨 renderDatabaseOperations called');
+    console.log('  - dbOperationsStatus:', dbOperationsStatus);
+    console.log('  - dbOperationsStatus?.config:', dbOperationsStatus?.config);
+    console.log('  - dbOperationsStatus?.config?.isConfigured:', dbOperationsStatus?.config?.isConfigured);
+    
     if (!dbOperationsStatus?.config?.isConfigured) {
       return (
         <Alert
@@ -160,6 +185,8 @@ const SimpleScriptManager = () => {
         />
       );
     }
+
+    console.log('✅ Database is configured, showing operations card');
 
     const getStatusColor = () => {
       return dbOperationsStatus.config.isConfigured ? 'success' : 'error';
