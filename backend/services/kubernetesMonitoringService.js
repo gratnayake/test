@@ -26,8 +26,8 @@ class KubernetesMonitoringService {
       started: []      // For intentional starts
     };
     this.alertBatchTimeout = null;
-    this.batchDelayMs = 30000; // Wait 30 seconds before sending batch
-    
+    this.batchDelayMs = 5000; // Wait 30 seconds before sending batch
+    this.immediateAlertThreshold = 3;
     this.podRestartTracking = new Map(); // Track individual pod restart counts
     this.restartAlertConfig = {
       enabled: true,
@@ -454,6 +454,8 @@ async sendPodRestartEmail(pod, restartsIncrease, emailGroupId) {
       console.log(`🔍 DEBUG: trackPodRestarts failed:`, error);
     }
 
+    await this.checkForMissingWorkloadsImmediate(currentWorkloads, config.emailGroupId);
+
     // Group pods by workload for comparison
     const currentWorkloads = this.groupPodsByWorkload(currentPods);
     console.log(`📊 Grouped into ${currentWorkloads.length} workloads`);
@@ -484,6 +486,139 @@ async sendPodRestartEmail(pod, restartsIncrease, emailGroupId) {
 
   } catch (error) {
     console.error('❌ Workload health check failed:', error);
+  }
+}
+
+async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
+  if (!emailGroupId) return;
+
+  const currentKeys = new Set(
+    currentWorkloads.map(w => `${w.type}/${w.name}/${w.namespace}`)
+  );
+
+  // Check each previously known workload
+  for (const [key, previousWorkload] of this.workloadStatuses) {
+    if (!currentKeys.has(key) && previousWorkload.lastSeen) {
+      // Workload is missing!
+      const timeSinceLastSeen = Date.now() - new Date(previousWorkload.lastSeen).getTime();
+      
+      // Only alert if it was recently seen (within last 5 minutes)
+      // This prevents alerts for old cleanup
+      if (timeSinceLastSeen < 5 * 60 * 1000) {
+        const wasHealthy = previousWorkload.readyReplicas > 0;
+        
+        if (wasHealthy) {
+          console.log(`🛑 WORKLOAD STOPPED/MISSING: ${key} - sending immediate alert!`);
+          
+          // Send immediate alert (like restart alerts do)
+          await this.sendWorkloadStoppedAlertImmediate(previousWorkload, emailGroupId);
+          
+          // Remove from tracking to prevent duplicate alerts
+          this.workloadStatuses.delete(key);
+        }
+      }
+    }
+  }
+}
+async sendWorkloadStoppedAlertImmediate(workload, emailGroupId) {
+  try {
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) {
+      console.log('❌ Email group not found or disabled for stop alert');
+      return;
+    }
+
+    const timestamp = new Date();
+    const workloadKey = `${workload.type}/${workload.name}/${workload.namespace}`;
+
+    const subject = `🛑 Kubernetes Workload Stopped: ${workload.name}`;
+
+    const mailOptions = {
+      from: emailService.getEmailConfig().user,
+      to: targetGroup.emails,
+      subject: subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">🛑 WORKLOAD STOPPED</h1>
+            <p style="margin: 8px 0 0 0; font-size: 16px;">Kubernetes workload has stopped or been removed</p>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px;">
+            <h2 style="margin-top: 0; color: #333;">Workload Details</h2>
+            
+            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
+              <tbody>
+                <tr style="background-color: #f8f9fa;">
+                  <td style="padding: 12px; font-weight: bold; border-bottom: 1px solid #dee2e6;">Workload Name:</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">${workload.name}</td>
+                </tr>
+                <tr style="background-color: white;">
+                  <td style="padding: 12px; font-weight: bold; border-bottom: 1px solid #dee2e6;">Type:</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">${workload.type}</td>
+                </tr>
+                <tr style="background-color: #f8f9fa;">
+                  <td style="padding: 12px; font-weight: bold; border-bottom: 1px solid #dee2e6;">Namespace:</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">${workload.namespace}</td>
+                </tr>
+                <tr style="background-color: white;">
+                  <td style="padding: 12px; font-weight: bold; border-bottom: 1px solid #dee2e6;">Previous State:</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">
+                    ${workload.readyReplicas || 0}/${workload.desiredReplicas || 0} pods were running
+                  </td>
+                </tr>
+                <tr style="background-color: #f8f9fa;">
+                  <td style="padding: 12px; font-weight: bold; border-bottom: 1px solid #dee2e6;">Current State:</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">
+                    <span style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
+                      STOPPED/REMOVED
+                    </span>
+                  </td>
+                </tr>
+                <tr style="background-color: white;">
+                  <td style="padding: 12px; font-weight: bold;">Detection Time:</td>
+                  <td style="padding: 12px;">${timestamp.toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #721c24;">⚠️ Possible Causes</h3>
+              <ul style="color: #721c24; margin: 10px 0;">
+                <li><strong>Manual stop:</strong> Workload stopped via kubectl or management script</li>
+                <li><strong>Scaling to zero:</strong> Replicas set to 0</li>
+                <li><strong>Deletion:</strong> Workload has been deleted from cluster</li>
+                <li><strong>Namespace removal:</strong> Entire namespace might be removed</li>
+              </ul>
+            </div>
+
+            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #856404;">📋 Recommended Actions</h3>
+              <ul style="color: #856404; margin: 10px 0;">
+                <li>Check if this was an intentional stop</li>
+                <li>Verify with team if maintenance is in progress</li>
+                <li>If unintentional, restart the workload immediately</li>
+                <li>Check cluster events: <code>kubectl get events -n ${workload.namespace}</code></li>
+              </ul>
+            </div>
+          </div>
+          
+          <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
+            <p style="margin: 0;">Stop alert sent to: ${targetGroup.name}</p>
+            <p style="margin: 5px 0 0 0;">Generated at: ${timestamp.toLocaleString()}</p>
+            <p style="margin: 5px 0 0 0;">Kubernetes Workload Monitoring • Immediate Stop Detection</p>
+          </div>
+        </div>
+      `
+    };
+
+    await emailService.transporter.sendMail(mailOptions);
+    console.log(`📧 ✅ Workload stop alert sent immediately for ${workloadKey}`);
+
+  } catch (error) {
+    console.error(`📧 ❌ Failed to send workload stop alert:`, error);
   }
 }
 
