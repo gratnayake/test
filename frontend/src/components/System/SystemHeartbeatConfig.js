@@ -418,66 +418,9 @@ const SystemHeartbeatConfig = () => {
 
           <Divider />
 
-          <Title level={4}>
-            <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: '8px' }} />
-            Alert Thresholds
-          </Title>
           
-          <Row gutter={[24, 0]}>
-            <Col span={12}>
-              <Form.Item
-                name={['alertThresholds', 'criticalMemoryMB']}
-                label="Critical Memory Usage (MB)"
-              >
-                <InputNumber
-                  min={100}
-                  max={8192}
-                  step={100}
-                  style={{ width: '100%' }}
-                  placeholder="1000"
-                />
-              </Form.Item>
-
-              <Form.Item
-                name={['alertThresholds', 'minUptimeMinutes']}
-                label="Minimum Uptime (Minutes)"
-              >
-                <InputNumber
-                  min={1}
-                  max={1440}
-                  style={{ width: '100%' }}
-                  placeholder="5"
-                />
-              </Form.Item>
-            </Col>
-
-            <Col span={12}>
-              <Form.Item
-                name={['alertThresholds', 'maxResponseTime']}
-                label="Max Response Time (ms)"
-              >
-                <InputNumber
-                  min={1000}
-                  max={30000}
-                  step={1000}
-                  style={{ width: '100%' }}
-                  placeholder="5000"
-                />
-              </Form.Item>
-
-              <Form.Item
-                name={['alertThresholds', 'maxErrorCount']}
-                label="Max Error Count"
-              >
-                <InputNumber
-                  min={1}
-                  max={100}
-                  style={{ width: '100%' }}
-                  placeholder="5"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          
+          
 
           <Alert
             message="Heartbeat Information"

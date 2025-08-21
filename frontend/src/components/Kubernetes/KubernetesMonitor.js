@@ -571,7 +571,7 @@ const EnhancedKubernetesMonitor = () => {
             return (
               <Badge 
                 count={totalRestarts} 
-                style={{ backgroundColor: '#f5222d' }}
+                style={{ backgroundColor: '#52c41a' }}
                 title={`Total restarts across all pods`}
               />
             );
@@ -581,7 +581,7 @@ const EnhancedKubernetesMonitor = () => {
         
         // Individual pod restarts
         return record.restarts > 0 ? (
-          <Badge count={record.restarts} style={{ backgroundColor: '#f5222d' }} />
+          <Badge count={record.restarts} style={{ backgroundColor: '#52c41a' }} />
         ) : (
           <Text type="secondary">0</Text>
         );
