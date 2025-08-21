@@ -215,12 +215,13 @@ class DatabaseAutoRecoveryService {
     return false;
   }*/
 
-    async handleDatabaseDown() {
+  async handleDatabaseDown() {
   const config = this.getConfig();
   
   console.log('🚨 === DATABASE AUTO-RECOVERY STARTED ===');
   console.log(`🔧 Auto-recovery enabled: ${config.enabled}`);
   console.log(`🔧 Current attempts: ${this.recoveryAttempts}/${config.maxAttempts}`);
+  console.log(`🔧 Recovery in progress: ${this.isRecoveryInProgress}`); // Added back
   
   if (!config.enabled) {
     console.log('📋 Auto-recovery is disabled, skipping recovery');
@@ -243,17 +244,25 @@ class DatabaseAutoRecoveryService {
   console.log('🚨 Starting automatic database recovery...');
   this.isRecoveryInProgress = true;
   this.recoveryAttempts++;
+  const attemptNumber = this.recoveryAttempts; // Store for email alerts
 
   try {
     // Step 1: Stop Pods (releases all connections)
     console.log('📋 === STEP 1: STOP PODS ===');
+    console.log('🔍 Looking for script named "Stop Pods"...'); // Added back
+    
     const stopResult = await this.runScriptByName('Stop Pods');
+    console.log(`📋 Stop script result:`, stopResult); // Added back
     
     if (!stopResult.success) {
-      console.error(`❌ Stop Pods script failed: ${stopResult.error}`);
+      const errorMsg = `Stop Pods script failed: ${stopResult.error}`;
+      console.error(`❌ ${errorMsg}`);
       // Continue anyway - database might still be recoverable
+      // Don't throw error, just log it
     } else {
       console.log('✅ Stop Pods script completed successfully');
+      // SEND ALERT: Pods stopped
+      await this.sendPodsStoppedAlert(attemptNumber);
     }
     
     // Step 2: Wait after stop
@@ -262,7 +271,12 @@ class DatabaseAutoRecoveryService {
     
     // Step 3: Restart database using the SAME METHOD as manual button
     console.log('📋 === STEP 3: RESTART DATABASE (using manual button method) ===');
-    const restartSuccess = await this.restartDatabase(); // This now uses your working startup() method
+    
+    // SEND ALERT: Database restarting
+    await this.sendDatabaseRestartingAlert(attemptNumber);
+    
+    const restartSuccess = await this.restartDatabase();
+    console.log(`📋 Database restart result: ${restartSuccess}`); // Added back
     
     if (restartSuccess) {
       // Step 4: Wait for database to fully initialize
@@ -272,11 +286,18 @@ class DatabaseAutoRecoveryService {
       // Step 5: Verify database (with retries for ORA-12518)
       console.log('📋 === STEP 5: VERIFY DATABASE ===');
       const isUp = await this.checkDatabaseStatus();
+      console.log(`📋 Database status check result: ${isUp}`); // Added back
       
       if (isUp) {
         // Step 6: Start Pods
         console.log('📋 === STEP 6: START PODS ===');
+        console.log('🔍 Looking for script named "Start Pods"...'); // Added back
+        
+        // SEND ALERT: Pods starting
+        await this.sendPodsStartingAlert(attemptNumber, true);
+        
         const startResult = await this.runScriptByName('Start Pods');
+        console.log(`📋 Start script result:`, startResult); // Added back
         
         if (!startResult.success) {
           console.log('⚠️ Start Pods script failed, but database is up');
@@ -295,15 +316,21 @@ class DatabaseAutoRecoveryService {
       } else {
         console.log('❌ Database failed to start after restart attempt');
         this.logRecovery('FAILED', 'Database failed to start after restart');
+        // SEND ALERT: Database verification failed
+        await this.sendDatabaseVerificationFailedAlert(attemptNumber);
       }
     } else {
       console.log('❌ Database restart command failed');
       this.logRecovery('RESTART_FAILED', 'Database restart command failed');
+      // SEND ALERT: Database restart failed
+      await this.sendDatabaseRestartFailedAlert(attemptNumber);
     }
     
   } catch (error) {
     console.error('❌ Error during database recovery:', error);
     this.logRecovery('ERROR', `Recovery failed: ${error.message}`);
+    // SEND ALERT: Recovery error
+    await this.sendRecoveryErrorAlert(attemptNumber, error.message);
   }
 
   this.isRecoveryInProgress = false;
@@ -316,6 +343,122 @@ class DatabaseAutoRecoveryService {
   }
   
   return false;
+}
+
+async sendDatabaseVerificationFailedAlert(attemptNumber) {
+  try {
+    const emailService = require('./emailService');
+    const config = this.getConfig();
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == config.emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) return;
+    
+    const subject = `❌ Auto-Recovery: Database Verification Failed - Attempt ${attemptNumber}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0;">❌ DATABASE VERIFICATION FAILED</h1>
+          <p style="margin: 8px 0 0 0;">Database started but cannot verify connection</p>
+        </div>
+        <div style="padding: 20px;">
+          <p>The database restart command executed but we cannot verify the database is accessible.</p>
+          <p>This might be due to:</p>
+          <ul>
+            <li>Listener not yet registered (ORA-12518)</li>
+            <li>Database still initializing</li>
+            <li>Network connectivity issues</li>
+          </ul>
+          <p><strong>Attempt ${attemptNumber} of ${config.maxAttempts}</strong></p>
+          ${this.recoveryAttempts < config.maxAttempts ? 
+            `<p>Will retry in ${(config.cooldownPeriod || 300000)/1000} seconds.</p>` : 
+            '<p>This was the final attempt.</p>'}
+        </div>
+      </div>
+    `;
+    
+    await emailService.sendEmail({
+      to: targetGroup.emails,
+      subject: subject,
+      html: html
+    });
+  } catch (error) {
+    console.error('Failed to send verification failed alert:', error);
+  }
+}
+
+async sendDatabaseRestartFailedAlert(attemptNumber) {
+  try {
+    const emailService = require('./emailService');
+    const config = this.getConfig();
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == config.emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) return;
+    
+    const subject = `❌ Auto-Recovery: Database Restart Failed - Attempt ${attemptNumber}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0;">❌ DATABASE RESTART FAILED</h1>
+          <p style="margin: 8px 0 0 0;">Failed to execute database startup command</p>
+        </div>
+        <div style="padding: 20px;">
+          <p>The database restart command failed to execute properly.</p>
+          <p><strong>Attempt ${attemptNumber} of ${config.maxAttempts}</strong></p>
+          ${this.recoveryAttempts < config.maxAttempts ? 
+            `<p>Will retry in ${(config.cooldownPeriod || 300000)/1000} seconds.</p>` : 
+            '<p>This was the final attempt. Manual intervention required.</p>'}
+        </div>
+      </div>
+    `;
+    
+    await emailService.sendEmail({
+      to: targetGroup.emails,
+      subject: subject,
+      html: html
+    });
+  } catch (error) {
+    console.error('Failed to send restart failed alert:', error);
+  }
+}
+
+async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
+  try {
+    const emailService = require('./emailService');
+    const config = this.getConfig();
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == config.emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) return;
+    
+    const subject = `❌ Auto-Recovery Error - Attempt ${attemptNumber}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0;">❌ AUTO-RECOVERY ERROR</h1>
+        </div>
+        <div style="padding: 20px;">
+          <p><strong>Error:</strong> ${errorMessage}</p>
+          <p><strong>Attempt ${attemptNumber} of ${config.maxAttempts}</strong></p>
+          ${this.recoveryAttempts < config.maxAttempts ? 
+            `<p>Will retry in ${(config.cooldownPeriod || 300000)/1000} seconds.</p>` : 
+            '<p>Maximum attempts reached. Manual intervention required.</p>'}
+        </div>
+      </div>
+    `;
+    
+    await emailService.sendEmail({
+      to: targetGroup.emails,
+      subject: subject,
+      html: html
+    });
+  } catch (error) {
+    console.error('Failed to send error alert:', error);
+  }
 }
   // Find script by exact name
   findScriptByName(scriptName) {
@@ -458,6 +601,279 @@ class DatabaseAutoRecoveryService {
         });
       });
     });
+  }
+  async sendPodsStoppedAlert(attemptNumber) {
+    try {
+      console.log('📧 Sending pods stopped alert...');
+      
+      const emailService = require('./emailService');
+      const config = this.getConfig();
+      
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
+      
+      if (!targetGroup || !targetGroup.enabled) {
+        console.log('⚠️ No email group configured');
+        return;
+      }
+      
+      const timestamp = new Date();
+      const subject = `🛑 Auto-Recovery: Pods Stopped (Step 1/4) - Attempt ${attemptNumber}`;
+      
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">🛑 PODS STOPPED</h1>
+            <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 1 of 4</p>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px;">
+            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
+              
+              <div style="margin: 15px 0;">
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
+                  <div>
+                    <strong>Step 1: Stop All Pods</strong> - COMPLETED
+                    <div style="color: #666; font-size: 12px;">Releasing all database connections</div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffc107; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">2</div>
+                  <div>
+                    <strong>Step 2: Restart Database</strong> - PENDING
+                    <div style="color: #666; font-size: 12px;">Will restart Oracle database</div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">3</div>
+                  <div>
+                    <strong>Step 3: Verify Database</strong> - WAITING
+                    <div style="color: #666; font-size: 12px;">Will verify database is accessible</div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">4</div>
+                  <div>
+                    <strong>Step 4: Start Pods</strong> - WAITING
+                    <div style="color: #666; font-size: 12px;">Will restore all pods</div>
+                  </div>
+                </div>
+              </div>
+              
+              <table style="width: 100%; margin-top: 15px;">
+                <tr>
+                  <td style="padding: 8px; border-bottom: 1px solid #dee2e6;"><strong>Time:</strong></td>
+                  <td style="padding: 8px; border-bottom: 1px solid #dee2e6;">${timestamp.toLocaleString()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px;"><strong>Recovery Attempt:</strong></td>
+                  <td style="padding: 8px;">${attemptNumber} of ${config.maxAttempts}</td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px;">
+              <strong>⏳ Next Step:</strong> Database will be restarted in ${config.waitAfterStop/1000} seconds
+            </div>
+          </div>
+          
+          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
+            <p style="margin: 0;">Database Auto-Recovery System - Step 1/4 Complete</p>
+          </div>
+        </div>
+      `;
+      
+      await emailService.sendEmail({
+        to: targetGroup.emails,
+        subject: subject,
+        html: html
+      });
+      
+      console.log('📧 ✅ Pods stopped alert sent');
+    } catch (error) {
+      console.error('📧 ❌ Failed to send pods stopped alert:', error);
+    }
+  }
+  
+  // Alert for database restart
+  async sendDatabaseRestartingAlert(attemptNumber) {
+    try {
+      console.log('📧 Sending database restarting alert...');
+      
+      const emailService = require('./emailService');
+      const config = this.getConfig();
+      
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
+      
+      if (!targetGroup || !targetGroup.enabled) return;
+      
+      const timestamp = new Date();
+      const subject = `🔄 Auto-Recovery: Database Restarting (Step 2/4) - Attempt ${attemptNumber}`;
+      
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #17a2b8; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">🔄 DATABASE RESTARTING</h1>
+            <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 2 of 4</p>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px;">
+            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
+              
+              <div style="margin: 15px 0;">
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
+                  <div>
+                    <strong>Step 1: Stop All Pods</strong> - COMPLETED
+                    <div style="color: #666; font-size: 12px;">All pods stopped successfully</div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #17a2b8; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">⟳</div>
+                  <div>
+                    <strong>Step 2: Restart Database</strong> - IN PROGRESS
+                    <div style="color: #17a2b8; font-size: 12px; font-weight: bold;">Executing STARTUP command...</div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">3</div>
+                  <div>
+                    <strong>Step 3: Verify Database</strong> - PENDING
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">4</div>
+                  <div>
+                    <strong>Step 4: Start Pods</strong> - PENDING
+                  </div>
+                </div>
+              </div>
+              
+              <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                <h3 style="margin-top: 0; color: #0c5460;">📋 Database Restart Details</h3>
+                <ul style="color: #0c5460; margin: 10px 0;">
+                  <li>Running STARTUP command as SYSDBA</li>
+                  <li>Opening pluggable databases</li>
+                  <li>Waiting for listener registration</li>
+                  <li>Expected duration: 30-60 seconds</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
+            <p style="margin: 0;">Database Auto-Recovery System - Step 2/4 In Progress</p>
+          </div>
+        </div>
+      `;
+      
+      await emailService.sendEmail({
+        to: targetGroup.emails,
+        subject: subject,
+        html: html
+      });
+      
+      console.log('📧 ✅ Database restarting alert sent');
+    } catch (error) {
+      console.error('📧 ❌ Failed to send database restarting alert:', error);
+    }
+  }
+  
+  // Alert for pods being started
+  async sendPodsStartingAlert(attemptNumber, dbVerified) {
+    try {
+      console.log('📧 Sending pods starting alert...');
+      
+      const emailService = require('./emailService');
+      const config = this.getConfig();
+      
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
+      
+      if (!targetGroup || !targetGroup.enabled) return;
+      
+      const timestamp = new Date();
+      const subject = `🚀 Auto-Recovery: Pods Starting (Step 4/4) - Attempt ${attemptNumber}`;
+      
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">🚀 PODS STARTING</h1>
+            <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 4 of 4</p>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px;">
+            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
+              
+              <div style="margin: 15px 0;">
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
+                  <div>
+                    <strong>Step 1: Stop All Pods</strong> - COMPLETED
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
+                  <div>
+                    <strong>Step 2: Restart Database</strong> - COMPLETED
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: ${dbVerified ? '#28a745' : '#ffc107'}; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">${dbVerified ? '✓' : '!'}</div>
+                  <div>
+                    <strong>Step 3: Verify Database</strong> - ${dbVerified ? 'VERIFIED' : 'PARTIALLY VERIFIED'}
+                    <div style="color: #666; font-size: 12px;">${dbVerified ? 'Database is accessible' : 'Database started but may need more time'}</div>
+                  </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 10px 0;">
+                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffc107; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">⟳</div>
+                  <div>
+                    <strong>Step 4: Start Pods</strong> - IN PROGRESS
+                    <div style="color: #ffc107; font-size: 12px; font-weight: bold;">Starting all pods...</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                <h3 style="margin-top: 0; color: #155724;">📊 Recovery Status</h3>
+                <p style="color: #155724; margin: 10px 0;">
+                  Database has been successfully restarted and ${dbVerified ? 'verified' : 'is initializing'}. 
+                  All pods are now being restored to resume normal operations.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
+            <p style="margin: 0;">Database Auto-Recovery System - Final Step In Progress</p>
+          </div>
+        </div>
+      `;
+      
+      await emailService.sendEmail({
+        to: targetGroup.emails,
+        subject: subject,
+        html: html
+      });
+      
+      console.log('📧 ✅ Pods starting alert sent');
+    } catch (error) {
+      console.error('📧 ❌ Failed to send pods starting alert:', error);
+    }
   }
 
   // Restart the database using SQL*Plus commands (same as manual operations)
