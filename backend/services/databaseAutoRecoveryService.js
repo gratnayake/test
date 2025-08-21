@@ -113,7 +113,7 @@ class DatabaseAutoRecoveryService {
   }
 
   // Main method called when database goes down
-  async handleDatabaseDown() {
+  /*async handleDatabaseDown() {
     const config = this.getConfig();
     
     console.log('🚨 === DATABASE AUTO-RECOVERY STARTED ===');
@@ -213,8 +213,110 @@ class DatabaseAutoRecoveryService {
     this.isRecoveryInProgress = false;
     console.log('🚨 === DATABASE AUTO-RECOVERY FAILED ===');
     return false;
+  }*/
+
+    async handleDatabaseDown() {
+  const config = this.getConfig();
+  
+  console.log('🚨 === DATABASE AUTO-RECOVERY STARTED ===');
+  console.log(`🔧 Auto-recovery enabled: ${config.enabled}`);
+  console.log(`🔧 Current attempts: ${this.recoveryAttempts}/${config.maxAttempts}`);
+  
+  if (!config.enabled) {
+    console.log('📋 Auto-recovery is disabled, skipping recovery');
+    return false;
   }
 
+  if (this.isRecoveryInProgress) {
+    console.log('🔄 Recovery already in progress, skipping');
+    return false;
+  }
+
+  if (this.recoveryAttempts >= config.maxAttempts) {
+    console.log(`🚫 Maximum recovery attempts (${config.maxAttempts}) reached`);
+    this.logRecovery('MAX_ATTEMPTS_REACHED', 'Maximum recovery attempts exceeded');
+    // Send alert email about max attempts reached
+    await this.sendMaxAttemptsAlert();
+    return false;
+  }
+
+  console.log('🚨 Starting automatic database recovery...');
+  this.isRecoveryInProgress = true;
+  this.recoveryAttempts++;
+
+  try {
+    // Step 1: Stop Pods (releases all connections)
+    console.log('📋 === STEP 1: STOP PODS ===');
+    const stopResult = await this.runScriptByName('Stop Pods');
+    
+    if (!stopResult.success) {
+      console.error(`❌ Stop Pods script failed: ${stopResult.error}`);
+      // Continue anyway - database might still be recoverable
+    } else {
+      console.log('✅ Stop Pods script completed successfully');
+    }
+    
+    // Step 2: Wait after stop
+    console.log(`📋 === STEP 2: WAITING ${config.waitAfterStop}ms ===`);
+    await this.sleep(config.waitAfterStop);
+    
+    // Step 3: Restart database using the SAME METHOD as manual button
+    console.log('📋 === STEP 3: RESTART DATABASE (using manual button method) ===');
+    const restartSuccess = await this.restartDatabase(); // This now uses your working startup() method
+    
+    if (restartSuccess) {
+      // Step 4: Wait for database to fully initialize
+      console.log(`📋 === STEP 4: WAITING ${config.waitAfterRestart}ms FOR DB ===`);
+      await this.sleep(config.waitAfterRestart);
+      
+      // Step 5: Verify database (with retries for ORA-12518)
+      console.log('📋 === STEP 5: VERIFY DATABASE ===');
+      const isUp = await this.checkDatabaseStatus();
+      
+      if (isUp) {
+        // Step 6: Start Pods
+        console.log('📋 === STEP 6: START PODS ===');
+        const startResult = await this.runScriptByName('Start Pods');
+        
+        if (!startResult.success) {
+          console.log('⚠️ Start Pods script failed, but database is up');
+          this.logRecovery('PARTIAL_SUCCESS', 'Database recovered but Start Pods script failed');
+          await this.sendPartialSuccessAlert();
+        } else {
+          console.log('🎉 Database recovery completed successfully!');
+          this.logRecovery('SUCCESS', 'Database recovered successfully');
+          await this.sendSuccessAlert();
+        }
+        
+        this.recoveryAttempts = 0; // Reset on success
+        this.isRecoveryInProgress = false;
+        console.log('🚨 === DATABASE AUTO-RECOVERY COMPLETED ===');
+        return true;
+      } else {
+        console.log('❌ Database failed to start after restart attempt');
+        this.logRecovery('FAILED', 'Database failed to start after restart');
+      }
+    } else {
+      console.log('❌ Database restart command failed');
+      this.logRecovery('RESTART_FAILED', 'Database restart command failed');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error during database recovery:', error);
+    this.logRecovery('ERROR', `Recovery failed: ${error.message}`);
+  }
+
+  this.isRecoveryInProgress = false;
+  console.log('🚨 === DATABASE AUTO-RECOVERY FAILED ===');
+  
+  // Check if we should try again later
+  if (this.recoveryAttempts < config.maxAttempts) {
+    const waitTime = config.cooldownPeriod || 300000; // 5 minutes default
+    console.log(`⏰ Will retry in ${waitTime/1000} seconds (attempt ${this.recoveryAttempts}/${config.maxAttempts})`);
+  }
+  
+  return false;
+}
   // Find script by exact name
   findScriptByName(scriptName) {
     try {
@@ -359,7 +461,7 @@ class DatabaseAutoRecoveryService {
   }
 
   // Restart the database using SQL*Plus commands (same as manual operations)
-  async restartDatabase() {
+  /*async restartDatabase() {
     return new Promise(async (resolve) => {
       console.log('🔄 Attempting to restart Oracle database using SQL*Plus commands...');
       console.log('💡 Using same method as your manual database operations');
@@ -484,10 +586,54 @@ EXIT;`;
         resolve(false);
       }
     });
-  }
+  }*/
 
+  async restartDatabase() {
+    try {
+      console.log('🔄 Starting database restart process...');
+      
+      // IMPORTANT: Use the SAME startup() method that works with your manual button
+      const databaseOperationsService = require('./databaseOperationsService');
+      
+      // The startup() method is what works when you click the button manually
+      console.log('🚀 Calling databaseOperationsService.startup() - same as manual button...');
+      const startupResult = await databaseOperationsService.startup();
+      
+      console.log('📋 Startup result:', {
+        success: startupResult.success,
+        message: startupResult.message,
+        method: startupResult.method,
+        verified: startupResult.verified
+      });
+      
+      if (startupResult.success) {
+        console.log('✅ Database startup command executed successfully');
+        
+        // Handle different success scenarios
+        if (startupResult.method === 'already_running') {
+          console.log('ℹ️ Database was already running');
+          return true;
+        } else if (startupResult.verified) {
+          console.log('✅ Database startup verified');
+          return true;
+        } else {
+          console.log('⚠️ Database startup executed but not verified yet');
+          // Still return true as the startup commands were executed
+          // The verification in step 5 will check if it's really up
+          return true;
+        }
+      } else {
+        console.error('❌ Database startup failed:', startupResult.error || startupResult.message);
+        return false;
+      }
+      
+    } catch (error) {
+      console.error('❌ Exception during database restart:', error);
+      return false;
+    }
+  }
   // Check if database is up (simple connection test)
-  async checkDatabaseStatus() {
+  /*async checkDatabaseStatus() {
     try {
       // Import your existing database service
       const realOracleService = require('./realOracleService');
@@ -495,6 +641,56 @@ EXIT;`;
       return result.success;
     } catch (error) {
       console.error('❌ Database status check failed:', error);
+      return false;
+    }
+  }*/
+
+  async checkDatabaseStatus() {
+    try {
+      console.log('🔍 Checking database status...');
+      
+      const realOracleService = require('./realOracleService');
+      
+      // Try multiple times as database might still be registering with listener
+      let attempts = 0;
+      const maxAttempts = 3;
+      const delayBetweenAttempts = 10000; // 10 seconds
+      
+      while (attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔍 Database check attempt ${attempts}/${maxAttempts}...`);
+        
+        const result = await realOracleService.checkConnection();
+        
+        if (result.isConnected) {
+          console.log('✅ Database is UP and responding');
+          return true;
+        } else {
+          console.log(`❌ Database check failed: ${result.error}`);
+          
+          // If it's ORA-12518, the database might be starting up
+          if (result.error && result.error.includes('ORA-12518')) {
+            console.log('ℹ️ ORA-12518: Listener registration pending, database may still be starting...');
+            
+            if (attempts < maxAttempts) {
+              console.log(`⏳ Waiting ${delayBetweenAttempts/1000} seconds before retry...`);
+              await new Promise(resolve => setTimeout(resolve, delayBetweenAttempts));
+              continue;
+            }
+          }
+          
+          // For other errors or last attempt, return false
+          if (attempts >= maxAttempts) {
+            console.log('❌ Database is DOWN after all attempts');
+            return false;
+          }
+        }
+      }
+      
+      return false;
+      
+    } catch (error) {
+      console.error('❌ Error checking database status:', error);
       return false;
     }
   }
