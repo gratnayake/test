@@ -489,7 +489,7 @@ async checkPodHealth() {
   }
 }
 
-async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
+/*async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
   if (!emailGroupId) {
     console.log('⚠️ No email group configured, skipping missing workload check');
     return;
@@ -534,7 +534,233 @@ async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
       }
     }
   }
+}*/
+
+async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
+  if (!emailGroupId) {
+    console.log('⚠️ No email group configured, skipping missing workload check');
+    return;
+  }
+
+  const currentKeys = new Set(
+    currentWorkloads.map(w => `${w.type}/${w.name}/${w.namespace}`)
+  );
+
+  console.log(`🔍 Checking for missing workloads. Current: ${currentKeys.size}, Previous: ${this.workloadStatuses.size}`);
+
+  const now = Date.now();
+  const stoppedWorkloads = [];
+
+  // STEP 1: Collect all stopped workloads (don't send alerts yet)
+  for (const [key, previousWorkload] of this.workloadStatuses) {
+    if (!currentKeys.has(key) && previousWorkload.lastSeen && !previousWorkload.alertedAsStopped) {
+      const timeSinceLastSeen = now - new Date(previousWorkload.lastSeen).getTime();
+      
+      // Only consider if it was recently seen (within last 5 minutes)
+      if (timeSinceLastSeen < 5 * 60 * 1000) {
+        const wasHealthy = previousWorkload.readyReplicas > 0;
+        
+        if (wasHealthy) {
+          console.log(`🛑 Found stopped workload: ${key}`);
+          console.log(`   Was: ${previousWorkload.readyReplicas}/${previousWorkload.desiredReplicas} ready`);
+          console.log(`   Last seen: ${timeSinceLastSeen}ms ago`);
+          
+          stoppedWorkloads.push({
+            key: key,
+            workload: previousWorkload,
+            timeSinceLastSeen: timeSinceLastSeen
+          });
+        } else {
+          console.log(`📊 Workload ${key} was missing but wasn't healthy before (${previousWorkload.readyReplicas} ready)`);
+        }
+      } else {
+        console.log(`🕐 Old workload ${key} missing for ${timeSinceLastSeen}ms - too old to alert`);
+      }
+    }
+  }
+
+  // STEP 2: Decide whether to send batch or individual alerts
+  if (stoppedWorkloads.length === 0) {
+    console.log('✅ No new stopped workloads detected');
+    return;
+  }
+
+  console.log(`📊 Total stopped workloads found: ${stoppedWorkloads.length}`);
+
+  // If 3 or more workloads stopped, treat as batch operation
+  const BATCH_THRESHOLD = 3;
+  
+  if (stoppedWorkloads.length >= BATCH_THRESHOLD) {
+    console.log(`📦 BATCH STOP detected: ${stoppedWorkloads.length} workloads stopped together`);
+    
+    // Send ONE batch alert for all stopped workloads
+    await this.sendBatchStopAlert(stoppedWorkloads, emailGroupId);
+    
+    // Mark all as alerted
+    for (const stopped of stoppedWorkloads) {
+      this.workloadStatuses.set(stopped.key, {
+        ...stopped.workload,
+        alertedAsStopped: true,
+        stoppedAt: new Date()
+      });
+    }
+    
+  } else {
+    // Less than threshold - send individual alerts
+    console.log(`📧 Sending individual alerts for ${stoppedWorkloads.length} stopped workload(s)`);
+    
+    for (const stopped of stoppedWorkloads) {
+      await this.sendWorkloadStoppedAlertImmediate(stopped.workload, emailGroupId);
+      
+      // Mark as alerted
+      this.workloadStatuses.set(stopped.key, {
+        ...stopped.workload,
+        alertedAsStopped: true,
+        stoppedAt: new Date()
+      });
+    }
+  }
 }
+
+// Add this new method for batch stop alerts:
+async sendBatchStopAlert(stoppedWorkloads, emailGroupId) {
+  try {
+    console.log(`📧 Preparing batch stop alert for ${stoppedWorkloads.length} workloads`);
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) {
+      console.log('❌ Email group not found or disabled');
+      return;
+    }
+
+    const timestamp = new Date();
+    const totalPods = stoppedWorkloads.reduce((sum, sw) => 
+      sum + (sw.workload.readyReplicas || 0), 0
+    );
+
+    const subject = `🛑 Kubernetes Batch Stop: ${stoppedWorkloads.length} workloads (${totalPods} pods) stopped`;
+
+    const mailOptions = {
+      from: emailService.getEmailConfig().user,
+      to: targetGroup.emails,
+      subject: subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+          <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">🛑 BATCH STOP DETECTED</h1>
+            <p style="margin: 8px 0 0 0; font-size: 16px;">Multiple workloads stopped simultaneously</p>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px;">
+            <!-- Summary Cards -->
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+              <h2 style="margin-top: 0; color: #333; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">📊 Summary</h2>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 15px;">
+                <div style="text-align: center; padding: 15px; background: #fff5f5; border: 1px solid #f5c2c7; border-radius: 8px;">
+                  <div style="font-size: 32px; font-weight: bold; color: #dc3545;">${stoppedWorkloads.length}</div>
+                  <div style="font-size: 12px; color: #842029; margin-top: 5px; font-weight: 600;">WORKLOADS STOPPED</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #fff5f5; border: 1px solid #f5c2c7; border-radius: 8px;">
+                  <div style="font-size: 32px; font-weight: bold; color: #dc3545;">${totalPods}</div>
+                  <div style="font-size: 12px; color: #842029; margin-top: 5px; font-weight: 600;">TOTAL PODS</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;">
+                  <div style="font-size: 16px; font-weight: bold; color: #495057; margin-top: 8px;">${timestamp.toLocaleTimeString()}</div>
+                  <div style="font-size: 12px; color: #6c757d; margin-top: 5px; font-weight: 600;">DETECTION TIME</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stopped Workloads Table -->
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+              <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">
+                📋 Affected Workloads
+              </h3>
+              <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                <thead>
+                  <tr style="background-color: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; color: #495057; font-weight: 600; border-bottom: 2px solid #dee2e6;">Workload Name</th>
+                    <th style="padding: 12px; text-align: left; color: #495057; font-weight: 600; border-bottom: 2px solid #dee2e6;">Namespace</th>
+                    <th style="padding: 12px; text-align: left; color: #495057; font-weight: 600; border-bottom: 2px solid #dee2e6;">Type</th>
+                    <th style="padding: 12px; text-align: center; color: #495057; font-weight: 600; border-bottom: 2px solid #dee2e6;">Pods Lost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${stoppedWorkloads.map((sw, index) => `
+                    <tr style="${index % 2 === 0 ? 'background-color: #fcfcfc;' : 'background-color: white;'}">
+                      <td style="padding: 12px; border-bottom: 1px solid #e9ecef;">
+                        <strong style="color: #212529;">${sw.workload.name}</strong>
+                      </td>
+                      <td style="padding: 12px; color: #495057; border-bottom: 1px solid #e9ecef;">
+                        ${sw.workload.namespace}
+                      </td>
+                      <td style="padding: 12px; color: #6c757d; border-bottom: 1px solid #e9ecef;">
+                        <span style="background: #e9ecef; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                          ${sw.workload.type}
+                        </span>
+                      </td>
+                      <td style="padding: 12px; text-align: center; border-bottom: 1px solid #e9ecef;">
+                        <span style="background: #dc3545; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+                          ${sw.workload.readyReplicas || 0}
+                        </span>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Alert Box -->
+            <div style="background-color: #fff3cd; border: 2px solid #ffecb5; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+              <h3 style="margin-top: 0; color: #664d03; display: flex; align-items: center;">
+                ⚠️ Batch Operation Detected
+              </h3>
+              <p style="color: #664d03; margin: 10px 0; line-height: 1.6;">
+                <strong>${stoppedWorkloads.length} workloads</strong> stopped within a short time window, 
+                indicating this was likely an <strong>intentional batch operation</strong>.
+              </p>
+              <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ffecb5;">
+                <p style="color: #664d03; margin: 5px 0;"><strong>Possible causes:</strong></p>
+                <ul style="color: #664d03; margin: 10px 0 10px 20px;">
+                  <li>MTCTL stop script execution</li>
+                  <li>kubectl scale deployment to 0 replicas</li>
+                  <li>Namespace deletion or cleanup</li>
+                  <li>Planned maintenance or shutdown</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Recommended Actions -->
+            <div style="background-color: #d1ecf1; border: 2px solid #bee5eb; padding: 20px; border-radius: 8px;">
+              <h3 style="margin-top: 0; color: #0c5460;">📌 Recommended Actions</h3>
+              <ol style="color: #0c5460; margin: 10px 0 10px 20px; line-height: 1.8;">
+                <li>Verify if this was an intentional shutdown</li>
+                <li>Check with team members about any planned maintenance</li>
+                <li>If unintentional, run the startup script to restore services</li>
+                <li>Monitor for batch recovery when services are restarted</li>
+              </ol>
+            </div>
+          </div>
+          
+          <div style="background-color: #343a40; color: #ffffff; padding: 15px; text-align: center; font-size: 12px;">
+            <p style="margin: 0;">🔔 Alert sent to: <strong>${targetGroup.name}</strong></p>
+            <p style="margin: 5px 0 0 0;">Generated at: ${timestamp.toLocaleString()}</p>
+            <p style="margin: 5px 0 0 0; opacity: 0.8;">Kubernetes Monitoring System • Batch Operation Detection Enabled</p>
+          </div>
+        </div>
+      `
+    };
+
+    await emailService.transporter.sendMail(mailOptions);
+    console.log(`📧 ✅ Batch stop alert sent successfully for ${stoppedWorkloads.length} workloads`);
+
+  } catch (error) {
+    console.error(`📧 ❌ Failed to send batch stop alert:`, error);
+  }
+}
+
 async sendWorkloadStoppedAlertImmediate(workload, emailGroupId) {
   try {
     const groups = emailService.getEmailGroups();
