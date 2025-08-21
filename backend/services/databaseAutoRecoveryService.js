@@ -603,278 +603,253 @@ async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
     });
   }
   async sendPodsStoppedAlert(attemptNumber) {
-    try {
-      console.log('📧 Sending pods stopped alert...');
-      
-      const emailService = require('./emailService');
-      const config = this.getConfig();
-      
-      const groups = emailService.getEmailGroups();
-      const targetGroup = groups.find(g => g.id == config.emailGroupId);
-      
-      if (!targetGroup || !targetGroup.enabled) {
-        console.log('⚠️ No email group configured');
-        return;
-      }
-      
-      const timestamp = new Date();
-      const subject = `🛑 Auto-Recovery: Pods Stopped (Step 1/4) - Attempt ${attemptNumber}`;
-      
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">🛑 PODS STOPPED</h1>
-            <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 1 of 4</p>
-          </div>
-          
-          <div style="background-color: #f8f9fa; padding: 20px;">
-            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-              <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
-              
-              <div style="margin: 15px 0;">
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
-                  <div>
-                    <strong>Step 1: Stop All Pods</strong> - COMPLETED
-                    <div style="color: #666; font-size: 12px;">Releasing all database connections</div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffc107; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">2</div>
-                  <div>
-                    <strong>Step 2: Restart Database</strong> - PENDING
-                    <div style="color: #666; font-size: 12px;">Will restart Oracle database</div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">3</div>
-                  <div>
-                    <strong>Step 3: Verify Database</strong> - WAITING
-                    <div style="color: #666; font-size: 12px;">Will verify database is accessible</div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">4</div>
-                  <div>
-                    <strong>Step 4: Start Pods</strong> - WAITING
-                    <div style="color: #666; font-size: 12px;">Will restore all pods</div>
-                  </div>
+  try {
+    console.log('📧 Sending pods stopped alert...');
+    
+    const emailService = require('./emailService');
+    const dbConfigService = require('./dbConfigService');
+    
+    // Get email group from DATABASE CONFIG, not auto-recovery config
+    const dbConfig = dbConfigService.getConfig();
+    console.log('📧 Database config emailGroupId:', dbConfig.emailGroupId);
+    
+    if (!dbConfig.emailGroupId) {
+      console.log('⚠️ No email group configured in database config');
+      return;
+    }
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == dbConfig.emailGroupId);
+    
+    if (!targetGroup) {
+      console.log(`⚠️ Email group ${dbConfig.emailGroupId} not found`);
+      return;
+    }
+    
+    if (!targetGroup.enabled) {
+      console.log(`⚠️ Email group ${targetGroup.name} is disabled`);
+      return;
+    }
+    
+    console.log(`📧 Sending alert to group: ${targetGroup.name} (${targetGroup.emails.length} recipients)`);
+    
+    const config = this.getConfig(); // Auto-recovery config for attempt numbers
+    const timestamp = new Date();
+    const subject = `🛑 Auto-Recovery: Pods Stopped (Step 1/4) - Attempt ${attemptNumber}`;
+    
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">🛑 PODS STOPPED</h1>
+          <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 1 of 4</p>
+        </div>
+        
+        <div style="background-color: #f8f9fa; padding: 20px;">
+          <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+            <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
+            
+            <div style="margin: 15px 0;">
+              <div style="display: flex; align-items: center; margin: 10px 0;">
+                <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
+                <div>
+                  <strong>Step 1: Stop All Pods</strong> - COMPLETED
+                  <div style="color: #666; font-size: 12px;">Releasing all database connections</div>
                 </div>
               </div>
               
-              <table style="width: 100%; margin-top: 15px;">
-                <tr>
-                  <td style="padding: 8px; border-bottom: 1px solid #dee2e6;"><strong>Time:</strong></td>
-                  <td style="padding: 8px; border-bottom: 1px solid #dee2e6;">${timestamp.toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px;"><strong>Recovery Attempt:</strong></td>
-                  <td style="padding: 8px;">${attemptNumber} of ${config.maxAttempts}</td>
-                </tr>
-              </table>
+              <div style="display: flex; align-items: center; margin: 10px 0;">
+                <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffc107; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">2</div>
+                <div>
+                  <strong>Step 2: Restart Database</strong> - PENDING
+                  <div style="color: #666; font-size: 12px;">Will restart Oracle database</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin: 10px 0;">
+                <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">3</div>
+                <div>
+                  <strong>Step 3: Verify Database</strong> - WAITING
+                  <div style="color: #666; font-size: 12px;">Will verify database is accessible</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin: 10px 0;">
+                <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">4</div>
+                <div>
+                  <strong>Step 4: Start Pods</strong> - WAITING
+                  <div style="color: #666; font-size: 12px;">Will restore all pods</div>
+                </div>
+              </div>
             </div>
             
-            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px;">
-              <strong>⏳ Next Step:</strong> Database will be restarted in ${config.waitAfterStop/1000} seconds
-            </div>
+            <table style="width: 100%; margin-top: 15px;">
+              <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #dee2e6;"><strong>Time:</strong></td>
+                <td style="padding: 8px; border-bottom: 1px solid #dee2e6;">${timestamp.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px;"><strong>Recovery Attempt:</strong></td>
+                <td style="padding: 8px;">${attemptNumber} of ${config.maxAttempts}</td>
+              </tr>
+            </table>
           </div>
           
-          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
-            <p style="margin: 0;">Database Auto-Recovery System - Step 1/4 Complete</p>
+          <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px;">
+            <strong>⏳ Next Step:</strong> Database will be restarted in ${config.waitAfterStop/1000} seconds
           </div>
         </div>
-      `;
-      
-      await emailService.sendEmail({
-        to: targetGroup.emails,
-        subject: subject,
-        html: html
-      });
-      
-      console.log('📧 ✅ Pods stopped alert sent');
-    } catch (error) {
-      console.error('📧 ❌ Failed to send pods stopped alert:', error);
-    }
-  }
-  
-  // Alert for database restart
-  async sendDatabaseRestartingAlert(attemptNumber) {
-    try {
-      console.log('📧 Sending database restarting alert...');
-      
-      const emailService = require('./emailService');
-      const config = this.getConfig();
-      
-      const groups = emailService.getEmailGroups();
-      const targetGroup = groups.find(g => g.id == config.emailGroupId);
-      
-      if (!targetGroup || !targetGroup.enabled) return;
-      
-      const timestamp = new Date();
-      const subject = `🔄 Auto-Recovery: Database Restarting (Step 2/4) - Attempt ${attemptNumber}`;
-      
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #17a2b8; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">🔄 DATABASE RESTARTING</h1>
-            <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 2 of 4</p>
-          </div>
-          
-          <div style="background-color: #f8f9fa; padding: 20px;">
-            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-              <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
-              
-              <div style="margin: 15px 0;">
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
-                  <div>
-                    <strong>Step 1: Stop All Pods</strong> - COMPLETED
-                    <div style="color: #666; font-size: 12px;">All pods stopped successfully</div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #17a2b8; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">⟳</div>
-                  <div>
-                    <strong>Step 2: Restart Database</strong> - IN PROGRESS
-                    <div style="color: #17a2b8; font-size: 12px; font-weight: bold;">Executing STARTUP command...</div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">3</div>
-                  <div>
-                    <strong>Step 3: Verify Database</strong> - PENDING
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">4</div>
-                  <div>
-                    <strong>Step 4: Start Pods</strong> - PENDING
-                  </div>
-                </div>
-              </div>
-              
-              <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                <h3 style="margin-top: 0; color: #0c5460;">📋 Database Restart Details</h3>
-                <ul style="color: #0c5460; margin: 10px 0;">
-                  <li>Running STARTUP command as SYSDBA</li>
-                  <li>Opening pluggable databases</li>
-                  <li>Waiting for listener registration</li>
-                  <li>Expected duration: 30-60 seconds</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-          
-          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
-            <p style="margin: 0;">Database Auto-Recovery System - Step 2/4 In Progress</p>
-          </div>
+        
+        <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
+          <p style="margin: 0;">Database Auto-Recovery System - Step 1/4 Complete</p>
         </div>
-      `;
-      
-      await emailService.sendEmail({
-        to: targetGroup.emails,
-        subject: subject,
-        html: html
-      });
-      
-      console.log('📧 ✅ Database restarting alert sent');
-    } catch (error) {
-      console.error('📧 ❌ Failed to send database restarting alert:', error);
-    }
+      </div>
+    `;
+    
+    await emailService.sendEmail({
+      to: targetGroup.emails,
+      subject: subject,
+      html: html
+    });
+    
+    console.log('📧 ✅ Pods stopped alert sent successfully');
+  } catch (error) {
+    console.error('📧 ❌ Failed to send pods stopped alert:', error);
   }
-  
-  // Alert for pods being started
-  async sendPodsStartingAlert(attemptNumber, dbVerified) {
-    try {
-      console.log('📧 Sending pods starting alert...');
-      
-      const emailService = require('./emailService');
-      const config = this.getConfig();
-      
-      const groups = emailService.getEmailGroups();
-      const targetGroup = groups.find(g => g.id == config.emailGroupId);
-      
-      if (!targetGroup || !targetGroup.enabled) return;
-      
-      const timestamp = new Date();
-      const subject = `🚀 Auto-Recovery: Pods Starting (Step 4/4) - Attempt ${attemptNumber}`;
-      
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">🚀 PODS STARTING</h1>
-            <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 4 of 4</p>
-          </div>
-          
-          <div style="background-color: #f8f9fa; padding: 20px;">
-            <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-              <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
-              
-              <div style="margin: 15px 0;">
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
-                  <div>
-                    <strong>Step 1: Stop All Pods</strong> - COMPLETED
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
-                  <div>
-                    <strong>Step 2: Restart Database</strong> - COMPLETED
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: ${dbVerified ? '#28a745' : '#ffc107'}; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">${dbVerified ? '✓' : '!'}</div>
-                  <div>
-                    <strong>Step 3: Verify Database</strong> - ${dbVerified ? 'VERIFIED' : 'PARTIALLY VERIFIED'}
-                    <div style="color: #666; font-size: 12px;">${dbVerified ? 'Database is accessible' : 'Database started but may need more time'}</div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 10px 0;">
-                  <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffc107; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">⟳</div>
-                  <div>
-                    <strong>Step 4: Start Pods</strong> - IN PROGRESS
-                    <div style="color: #ffc107; font-size: 12px; font-weight: bold;">Starting all pods...</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                <h3 style="margin-top: 0; color: #155724;">📊 Recovery Status</h3>
-                <p style="color: #155724; margin: 10px 0;">
-                  Database has been successfully restarted and ${dbVerified ? 'verified' : 'is initializing'}. 
-                  All pods are now being restored to resume normal operations.
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
-            <p style="margin: 0;">Database Auto-Recovery System - Final Step In Progress</p>
-          </div>
-        </div>
-      `;
-      
-      await emailService.sendEmail({
-        to: targetGroup.emails,
-        subject: subject,
-        html: html
-      });
-      
-      console.log('📧 ✅ Pods starting alert sent');
-    } catch (error) {
-      console.error('📧 ❌ Failed to send pods starting alert:', error);
+}
+
+async sendDatabaseRestartingAlert(attemptNumber) {
+  try {
+    console.log('📧 Sending database restarting alert...');
+    
+    const emailService = require('./emailService');
+    const dbConfigService = require('./dbConfigService');
+    
+    // Get email group from DATABASE CONFIG
+    const dbConfig = dbConfigService.getConfig();
+    console.log('📧 Database config emailGroupId:', dbConfig.emailGroupId);
+    
+    if (!dbConfig.emailGroupId) {
+      console.log('⚠️ No email group configured in database config');
+      return;
     }
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == dbConfig.emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) {
+      console.log('⚠️ Email group not found or disabled');
+      return;
+    }
+    
+    console.log(`📧 Sending alert to group: ${targetGroup.name}`);
+    
+    const config = this.getConfig(); // Auto-recovery config
+    const timestamp = new Date();
+    const subject = `🔄 Auto-Recovery: Database Restarting (Step 2/4) - Attempt ${attemptNumber}`;
+    
+    // ... rest of the HTML content ...
+    
+    await emailService.sendEmail({
+      to: targetGroup.emails,
+      subject: subject,
+      html: html
+    });
+    
+    console.log('📧 ✅ Database restarting alert sent');
+  } catch (error) {
+    console.error('📧 ❌ Failed to send database restarting alert:', error);
   }
+}
+
+async sendPodsStartingAlert(attemptNumber, dbVerified) {
+  try {
+    console.log('📧 Sending pods starting alert...');
+    
+    const emailService = require('./emailService');
+    const dbConfigService = require('./dbConfigService');
+    
+    // Get email group from DATABASE CONFIG
+    const dbConfig = dbConfigService.getConfig();
+    
+    if (!dbConfig.emailGroupId) {
+      console.log('⚠️ No email group configured in database config');
+      return;
+    }
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == dbConfig.emailGroupId);
+    
+    if (!targetGroup || !targetGroup.enabled) {
+      console.log('⚠️ Email group not found or disabled');
+      return;
+    }
+    
+    // ... rest of the method
+  } catch (error) {
+    console.error('📧 ❌ Failed to send pods starting alert:', error);
+  }
+}
+
+getEmailGroup() {
+  try {
+    const emailService = require('./emailService');
+    const dbConfigService = require('./dbConfigService');
+    
+    // Get email group from DATABASE CONFIG
+    const dbConfig = dbConfigService.getConfig();
+    console.log('📧 Getting email group from database config:', dbConfig.emailGroupId);
+    
+    if (!dbConfig.emailGroupId) {
+      console.log('⚠️ No email group configured in database config');
+      return null;
+    }
+    
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id == dbConfig.emailGroupId);
+    
+    if (!targetGroup) {
+      console.log(`⚠️ Email group ${dbConfig.emailGroupId} not found`);
+      return null;
+    }
+    
+    if (!targetGroup.enabled) {
+      console.log(`⚠️ Email group ${targetGroup.name} is disabled`);
+      return null;
+    }
+    
+    console.log(`📧 Using email group: ${targetGroup.name} (${targetGroup.emails.length} recipients)`);
+    return targetGroup;
+    
+  } catch (error) {
+    console.error('📧 ❌ Failed to get email group:', error);
+    return null;
+  }
+}
+
+// Then you can simplify all alert methods:
+async sendAnyAlert(subject, html) {
+  try {
+    const emailService = require('./emailService');
+    const targetGroup = this.getEmailGroup();
+    
+    if (!targetGroup) {
+      return; // Already logged why in getEmailGroup()
+    }
+    
+    await emailService.sendEmail({
+      to: targetGroup.emails,
+      subject: subject,
+      html: html
+    });
+    
+    console.log(`📧 ✅ Alert sent: ${subject}`);
+    return true;
+    
+  } catch (error) {
+    console.error(`📧 ❌ Failed to send alert:`, error);
+    return false;
+  }
+}
 
   // Restart the database using SQL*Plus commands (same as manual operations)
   /*async restartDatabase() {
