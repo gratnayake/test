@@ -251,7 +251,7 @@ class DatabaseAutoRecoveryService {
     console.log('📋 === STEP 1: STOP PODS ===');
     console.log('🔍 Looking for script named "Stop Pods"...'); // Added back
     
-    const stopResult = await this.runScriptByName('Stop Pods');
+    /*const stopResult = await this.runScriptByName('Stop Pods');
     console.log(`📋 Stop script result:`, stopResult); // Added back
     
     if (!stopResult.success) {
@@ -264,7 +264,7 @@ class DatabaseAutoRecoveryService {
       // SEND ALERT: Pods stopped
       await this.sendPodsStoppedAlert(attemptNumber);
     }
-    
+    */
     // Step 2: Wait after stop
     console.log(`📋 === STEP 2: WAITING ${config.waitAfterStop}ms ===`);
     await this.sleep(config.waitAfterStop);
@@ -278,7 +278,7 @@ class DatabaseAutoRecoveryService {
     const restartSuccess = await this.restartDatabase();
     console.log(`📋 Database restart result: ${restartSuccess}`); // Added back
     
-    if (restartSuccess) {
+    /*if (restartSuccess) {
       // Step 4: Wait for database to fully initialize
       console.log(`📋 === STEP 4: WAITING ${config.waitAfterRestart}ms FOR DB ===`);
       await this.sleep(config.waitAfterRestart);
@@ -324,7 +324,7 @@ class DatabaseAutoRecoveryService {
       this.logRecovery('RESTART_FAILED', 'Database restart command failed');
       // SEND ALERT: Database restart failed
       await this.sendDatabaseRestartFailedAlert(attemptNumber);
-    }
+    }*/
     
   } catch (error) {
     console.error('❌ Error during database recovery:', error);
