@@ -1248,10 +1248,7 @@ async handleInitialWorkloadDetection(workload, emailGroupId) {
   }
 
   // ENHANCED: Send comprehensive batch alert with full cluster status
-  // Enhanced sendBatchAlert method for kubernetesMonitoringService.js
-// This version shows both recovered pods AND pods that are still down
-
-async sendBatchAlert(emailGroupId) {
+  async sendBatchAlert(emailGroupId) {
   try {
     const totalAlerts = this.getTotalPendingAlerts();
     
@@ -1260,7 +1257,7 @@ async sendBatchAlert(emailGroupId) {
       return;
     }
 
-    console.log(`📧 Preparing comprehensive batch alert with current cluster status...`);
+    console.log(`📧 Sending batch alert with ${totalAlerts} workload changes...`);
 
     const groups = emailService.getEmailGroups();
     const targetGroup = groups.find(g => g.id == emailGroupId);
@@ -1271,313 +1268,62 @@ async sendBatchAlert(emailGroupId) {
       return;
     }
 
-    // Get current cluster state for comprehensive view
-    let currentClusterStatus = null;
-    try {
-      // Get ALL current workloads to show complete status
-      const allWorkloads = await this.getWorkloadStatus();
-      
-      // Categorize current workloads
-      currentClusterStatus = {
-        healthy: [],
-        degraded: [],
-        failed: [],
-        total: allWorkloads.length
-      };
-      
-      allWorkloads.forEach(workload => {
-        const readyRatio = workload.readyReplicas || 0;
-        const desiredRatio = workload.desiredReplicas || 0;
-        
-        if (readyRatio === 0 && desiredRatio > 0) {
-          currentClusterStatus.failed.push(workload);
-        } else if (readyRatio < desiredRatio) {
-          currentClusterStatus.degraded.push(workload);
-        } else if (readyRatio === desiredRatio && readyRatio > 0) {
-          currentClusterStatus.healthy.push(workload);
-        }
-      });
-      
-      console.log(`📊 Current Cluster Status: ${currentClusterStatus.healthy.length} healthy, ${currentClusterStatus.degraded.length} degraded, ${currentClusterStatus.failed.length} failed`);
-      
-    } catch (error) {
-      console.error('Failed to get current cluster status:', error);
-    }
-
-    // Categorize pending alerts
+    // Categorize alerts
     const failed = this.pendingAlerts.failed;
     const degraded = this.pendingAlerts.degraded;
     const recovered = this.pendingAlerts.recovered;
     
-    // Determine overall status for subject line
-    const hasFailures = failed.length > 0 || (currentClusterStatus && currentClusterStatus.failed.length > 0);
-    const hasDegradations = degraded.length > 0 || (currentClusterStatus && currentClusterStatus.degraded.length > 0);
-    const hasRecoveries = recovered.length > 0;
-    
-    // Generate subject based on current state
-    let subject = '☸️ Kubernetes Status: ';
-    if (hasFailures) {
-      subject += `🔴 ${failed.length + (currentClusterStatus?.failed.length || 0)} Failed`;
-    }
-    if (hasDegradations) {
-      subject += `${hasFailures ? ', ' : ''}🟠 ${degraded.length + (currentClusterStatus?.degraded.length || 0)} Degraded`;
-    }
-    if (hasRecoveries) {
-      subject += `${hasFailures || hasDegradations ? ', ' : ''}🟢 ${recovered.length} Recovered`;
-    }
-    
+    // Generate enhanced email with recovery context
+    const subject = `☸️ Kubernetes Alert: ${totalAlerts} pod changes detected`;
     const now = new Date();
+    const totalChanges = failed.length + degraded.length + recovered.length;
 
     const mailOptions = {
       from: emailService.getEmailConfig().user,
       to: targetGroup.emails,
       subject: subject,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
-          <div style="background-color: ${hasFailures ? '#dc3545' : hasDegradations ? '#ff7f00' : '#28a745'}; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">☸️ KUBERNETES CLUSTER STATUS</h1>
-            <p style="margin: 8px 0 0 0; font-size: 16px;">Complete Pod Status Report</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: ${failed.length > 0 ? 
+            '#dc3545' : degraded.length > 0 ? '#ff7f00' : '#28a745'}; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">☸️ KUBERNETES ALERT</h1>
+            <p style="margin: 8px 0 0 0; font-size: 16px;">${totalChanges} pod changes detected</p>
           </div>
           
           <div style="background-color: #f8f9fa; padding: 20px;">
-            
-            <!-- Current Cluster Overview -->
-            ${currentClusterStatus ? `
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #dee2e6;">
-              <h2 style="margin-top: 0; color: #333;">📊 Current Cluster Overview</h2>
-              <div style="display: flex; justify-content: space-around; margin: 20px 0;">
-                <div style="text-align: center; padding: 15px; background: #d4edda; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 28px; font-weight: bold; color: #28a745;">${currentClusterStatus.healthy.length}</div>
-                  <div style="font-size: 14px; color: #155724;">Healthy</div>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #fff3cd; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 28px; font-weight: bold; color: #ff7f00;">${currentClusterStatus.degraded.length}</div>
-                  <div style="font-size: 14px; color: #856404;">Degraded</div>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #f8d7da; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 28px; font-weight: bold; color: #dc3545;">${currentClusterStatus.failed.length}</div>
-                  <div style="font-size: 14px; color: #721c24;">Failed</div>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #e2e3e5; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 28px; font-weight: bold; color: #6c757d;">${currentClusterStatus.total}</div>
-                  <div style="font-size: 14px; color: #383d41;">Total</div>
-                </div>
+            <h2 style="margin-top: 0; color: #333;">Summary</h2>
+            <div style="display: flex; justify-content: space-around; margin: 20px 0;">
+              <div style="text-align: center; padding: 15px; background: white; border-radius: 8px; min-width: 80px;">
+                <div style="font-size: 24px; font-weight: bold; color: #dc3545;">${failed.length}</div>
+                <div style="font-size: 12px; color: #666;">Failed</div>
               </div>
-            </div>
-            ` : ''}
-
-            <!-- Recent Changes Section -->
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-              <h2 style="margin-top: 0; color: #333;">🔄 Recent Changes</h2>
-              <div style="display: flex; justify-content: space-around; margin: 20px 0;">
-                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 24px; font-weight: bold; color: #dc3545;">${failed.length}</div>
-                  <div style="font-size: 12px; color: #666;">New Failures</div>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 24px; font-weight: bold; color: #ff7f00;">${degraded.length}</div>
-                  <div style="font-size: 12px; color: #666;">New Degradations</div>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; min-width: 100px;">
-                  <div style="font-size: 24px; font-weight: bold; color: #28a745;">${recovered.length}</div>
-                  <div style="font-size: 12px; color: #666;">Recovered</div>
-                </div>
+              <div style="text-align: center; padding: 15px; background: white; border-radius: 8px; min-width: 80px;">
+                <div style="font-size: 24px; font-weight: bold; color: #ff7f00;">${degraded.length}</div>
+                <div style="font-size: 12px; color: #666;">Degraded</div>
+              </div>
+              <div style="text-align: center; padding: 15px; background: white; border-radius: 8px; min-width: 80px;">
+                <div style="font-size: 24px; font-weight: bold; color: #28a745;">${recovered.length}</div>
+                <div style="font-size: 12px; color: #666;">Recovered</div>
               </div>
             </div>
 
-            <!-- Detailed Status Sections -->
-            
-            <!-- Currently Failed/Down Pods -->
-            ${currentClusterStatus && currentClusterStatus.failed.length > 0 ? `
-            <div style="margin: 20px 0;">
-              <h3 style="color: #dc3545; margin-bottom: 15px;">🔴 Currently Failed/Down Pods</h3>
-              <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
-                <thead>
-                  <tr style="background-color: #dc3545; color: white;">
-                    <th style="padding: 12px; text-align: left;">Workload</th>
-                    <th style="padding: 12px; text-align: left;">Namespace</th>
-                    <th style="padding: 12px; text-align: left;">Type</th>
-                    <th style="padding: 12px; text-align: left;">Ready</th>
-                    <th style="padding: 12px; text-align: left;">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${currentClusterStatus.failed.map((workload, index) => `
-                    <tr style="background-color: ${index % 2 === 0 ? '#fff5f5' : 'white'};">
-                      <td style="padding: 12px; font-weight: bold; color: #dc3545;">${workload.name}</td>
-                      <td style="padding: 12px;">${workload.namespace}</td>
-                      <td style="padding: 12px;">${workload.type}</td>
-                      <td style="padding: 12px;">
-                        <span style="color: #dc3545; font-weight: bold;">
-                          ${workload.readyReplicas || 0}/${workload.desiredReplicas || 0}
-                        </span>
-                      </td>
-                      <td style="padding: 12px;">
-                        <span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">
-                          DOWN
-                        </span>
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-            ` : ''}
+            ${this.generateEnhancedAlertSection('🚨 Failed Pods', failed, '#dc3545')}
+            ${this.generateEnhancedAlertSection('⚠️ Degraded Pods', degraded, '#ff7f00')}
+            ${this.generateEnhancedAlertSection('✅ Recovered Pods', recovered, '#28a745')}
 
-            <!-- Currently Degraded Pods -->
-            ${currentClusterStatus && currentClusterStatus.degraded.length > 0 ? `
-            <div style="margin: 20px 0;">
-              <h3 style="color: #ff7f00; margin-bottom: 15px;">🟠 Currently Degraded Pods</h3>
-              <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
-                <thead>
-                  <tr style="background-color: #ff7f00; color: white;">
-                    <th style="padding: 12px; text-align: left;">Workload</th>
-                    <th style="padding: 12px; text-align: left;">Namespace</th>
-                    <th style="padding: 12px; text-align: left;">Type</th>
-                    <th style="padding: 12px; text-align: left;">Ready</th>
-                    <th style="padding: 12px; text-align: left;">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${currentClusterStatus.degraded.map((workload, index) => `
-                    <tr style="background-color: ${index % 2 === 0 ? '#fff8f0' : 'white'};">
-                      <td style="padding: 12px; font-weight: bold; color: #ff7f00;">${workload.name}</td>
-                      <td style="padding: 12px;">${workload.namespace}</td>
-                      <td style="padding: 12px;">${workload.type}</td>
-                      <td style="padding: 12px;">
-                        <span style="color: #ff7f00; font-weight: bold;">
-                          ${workload.readyReplicas || 0}/${workload.desiredReplicas || 0}
-                        </span>
-                      </td>
-                      <td style="padding: 12px;">
-                        <span style="background: #ff7f00; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">
-                          DEGRADED
-                        </span>
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-            ` : ''}
-
-            <!-- Recently Recovered Pods -->
-            ${recovered.length > 0 ? `
-            <div style="margin: 20px 0;">
-              <h3 style="color: #28a745; margin-bottom: 15px;">✅ Recently Recovered Pods</h3>
-              <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
-                <thead>
-                  <tr style="background-color: #28a745; color: white;">
-                    <th style="padding: 12px; text-align: left;">Workload</th>
-                    <th style="padding: 12px; text-align: left;">Namespace</th>
-                    <th style="padding: 12px; text-align: left;">Type</th>
-                    <th style="padding: 12px; text-align: left;">Ready</th>
-                    <th style="padding: 12px; text-align: left;">Recovery Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${recovered.map((alert, index) => `
-                    <tr style="background-color: ${index % 2 === 0 ? '#f0f9f0' : 'white'};">
-                      <td style="padding: 12px; font-weight: bold; color: #28a745;">${alert.workload.name}</td>
-                      <td style="padding: 12px;">${alert.workload.namespace}</td>
-                      <td style="padding: 12px;">${alert.workload.type}</td>
-                      <td style="padding: 12px;">
-                        <span style="color: #28a745; font-weight: bold;">
-                          ${alert.workload.readyReplicas || 0}/${alert.workload.desiredReplicas || 0}
-                        </span>
-                      </td>
-                      <td style="padding: 12px; font-size: 11px; color: #666;">
-                        ${new Date(alert.timestamp).toLocaleTimeString()}
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-            ` : ''}
-
-            <!-- Healthy Pods Summary -->
-            ${currentClusterStatus && currentClusterStatus.healthy.length > 0 ? `
-            <div style="margin: 20px 0;">
-              <details>
-                <summary style="cursor: pointer; color: #28a745; font-weight: bold; margin-bottom: 15px;">
-                  🟢 Currently Healthy Pods (${currentClusterStatus.healthy.length})
-                </summary>
-                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; margin-top: 10px;">
-                  <thead>
-                    <tr style="background-color: #28a745; color: white;">
-                      <th style="padding: 12px; text-align: left;">Workload</th>
-                      <th style="padding: 12px; text-align: left;">Namespace</th>
-                      <th style="padding: 12px; text-align: left;">Type</th>
-                      <th style="padding: 12px; text-align: left;">Ready</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${currentClusterStatus.healthy.slice(0, 10).map((workload, index) => `
-                      <tr style="background-color: ${index % 2 === 0 ? '#f0f9f0' : 'white'};">
-                        <td style="padding: 12px;">${workload.name}</td>
-                        <td style="padding: 12px;">${workload.namespace}</td>
-                        <td style="padding: 12px;">${workload.type}</td>
-                        <td style="padding: 12px;">
-                          <span style="color: #28a745;">
-                            ${workload.readyReplicas || 0}/${workload.desiredReplicas || 0}
-                          </span>
-                        </td>
-                      </tr>
-                    `).join('')}
-                    ${currentClusterStatus.healthy.length > 10 ? `
-                      <tr>
-                        <td colspan="4" style="padding: 12px; text-align: center; color: #666; font-style: italic;">
-                          ... and ${currentClusterStatus.healthy.length - 10} more healthy workloads
-                        </td>
-                      </tr>
-                    ` : ''}
-                  </tbody>
-                </table>
-              </details>
-            </div>
-            ` : ''}
-
-            <!-- Action Items -->
-            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <h3 style="margin-top: 0; color: #856404;">⚠️ Action Required</h3>
-              <ul style="color: #856404; margin: 10px 0;">
-                ${currentClusterStatus && currentClusterStatus.failed.length > 0 ? `
-                  <li><strong>Critical:</strong> ${currentClusterStatus.failed.length} workload(s) are completely down and need immediate attention</li>
-                ` : ''}
-                ${currentClusterStatus && currentClusterStatus.degraded.length > 0 ? `
-                  <li><strong>Warning:</strong> ${currentClusterStatus.degraded.length} workload(s) are running with reduced capacity</li>
-                ` : ''}
-                ${recovered.length > 0 ? `
-                  <li><strong>Info:</strong> ${recovered.length} workload(s) have recovered successfully</li>
-                ` : ''}
-                <li>Review the detailed status above and take appropriate action</li>
-                <li>Check cluster resources and recent deployments for root cause</li>
+            <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #0c5460;">ℹ️ Recovery Context</h3>
+              <ul style="color: #0c5460; margin: 10px 0;">
+                <li><strong>Initial Recovery:</strong> Pods that were unhealthy when monitoring started</li>
+                <li><strong>Normal Recovery:</strong> Pods that failed and then recovered during monitoring</li>
+                <li><strong>Monitoring:</strong> Ignores initially unhealthy pods to prevent false alerts</li>
               </ul>
-            </div>
-
-            <!-- Summary Stats -->
-            <div style="background-color: #e9ecef; padding: 15px; border-radius: 4px; margin-top: 20px;">
-              <h4 style="margin: 0 0 10px 0; color: #495057;">📈 Cluster Health Summary</h4>
-              <div style="display: flex; justify-content: space-between; font-size: 14px;">
-                <div>
-                  <strong>Total Workloads:</strong> ${currentClusterStatus ? currentClusterStatus.total : 'Unknown'}
-                </div>
-                <div>
-                  <strong>Health Score:</strong> 
-                  ${currentClusterStatus ? 
-                    Math.round((currentClusterStatus.healthy.length / currentClusterStatus.total) * 100) : 'N/A'}%
-                </div>
-                <div>
-                  <strong>Time:</strong> ${now.toLocaleString()}
-                </div>
-              </div>
             </div>
           </div>
           
-          <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
-            <p style="margin: 0;">Kubernetes Monitoring System - Comprehensive Status Report</p>
-            <p style="margin: 5px 0 0 0;">Alert sent to: ${targetGroup.name}</p>
+          <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
+            <p style="margin: 0;">Alert sent to: ${targetGroup.name}</p>
+            <p style="margin: 5px 0 0 0;">Generated at: ${now.toLocaleString()}</p>
           </div>
         </div>
       `
@@ -1585,7 +1331,7 @@ async sendBatchAlert(emailGroupId) {
 
     try {
       await emailService.transporter.sendMail(mailOptions);
-      console.log('📧 ✅ Comprehensive batch alert sent successfully');
+      console.log('📧 ✅ Enhanced batch alert sent successfully');
       
       // Clear pending alerts after successful send
       this.clearPendingAlerts();

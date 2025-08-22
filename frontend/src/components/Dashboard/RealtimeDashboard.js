@@ -30,7 +30,6 @@ const { Title, Text } = Typography;
 const RealtimeDashboard = () => {
   const [dbStatus, setDbStatus] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
-  const [tablespaceData, setTablespaceData] = useState([]);
   const [monitoringStatus, setMonitoringStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
