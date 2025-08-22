@@ -443,7 +443,6 @@ async sendSuccessAlert() {
                 <li>✅ Database startup completed</li>
                 <li>✅ Database connection verified</li>
                 <li>✅ Start Pods script executed successfully</li>
-                <li>✅ All services restored to normal operation</li>
               </ol>
             </div>
             
