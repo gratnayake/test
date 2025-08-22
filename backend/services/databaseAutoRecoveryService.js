@@ -237,7 +237,7 @@ class DatabaseAutoRecoveryService {
     console.log(`🚫 Maximum recovery attempts (${config.maxAttempts}) reached`);
     this.logRecovery('MAX_ATTEMPTS_REACHED', 'Maximum recovery attempts exceeded');
     // Send alert email about max attempts reached
-    await this.sendMaxAttemptsAlert();
+    await this.sendFailureAlert('Maximum recovery attempts exceeded');
     return false;
   }
 
@@ -344,6 +344,286 @@ class DatabaseAutoRecoveryService {
   
   return false;
 }
+
+async sendSuccessAlert() {
+  try {
+    console.log('📧 Sending recovery success alert...');
+    
+    // Get database config for email group
+    const dbConfigService = require('./dbConfigService');
+    const dbConfig = dbConfigService.getConfig();
+    
+    if (!dbConfig.emailGroupId) {
+      console.log('⚠️ No email group configured for database alerts');
+      return false;
+    }
+    
+    console.log('📧 Database config emailGroupId:', dbConfig.emailGroupId);
+    
+    // Get email service
+    const emailService = require('./emailService');
+    
+    // Get the email group
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id === dbConfig.emailGroupId && g.enabled);
+    
+    if (!targetGroup || targetGroup.emails.length === 0) {
+      console.log('⚠️ No valid email group found for database alerts');
+      return false;
+    }
+    
+    console.log(`📧 Sending success alert to group: ${targetGroup.name} (${targetGroup.emails.length} recipients)`);
+    
+    // Calculate recovery duration if we have the log
+    let recoveryDuration = 'Unknown';
+    let attemptInfo = `Attempt ${this.recoveryAttempts} of ${this.maxRecoveryAttempts}`;
+    
+    if (this.recoveryLog && this.recoveryLog.length > 0) {
+      const firstLog = this.recoveryLog[0];
+      const lastLog = this.recoveryLog[this.recoveryLog.length - 1];
+      
+      if (firstLog.timestamp && lastLog.timestamp) {
+        const startTime = new Date(firstLog.timestamp);
+        const endTime = new Date(lastLog.timestamp);
+        const durationMs = endTime - startTime;
+        
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = Math.floor((durationMs % 60000) / 1000);
+        
+        if (minutes > 0) {
+          recoveryDuration = `${minutes} minute${minutes !== 1 ? 's' : ''} ${seconds} second${seconds !== 1 ? 's' : ''}`;
+        } else {
+          recoveryDuration = `${seconds} second${seconds !== 1 ? 's' : ''}`;
+        }
+      }
+    }
+    
+    const currentTime = new Date();
+    const mailOptions = {
+      from: emailService.getEmailConfig().user,
+      to: targetGroup.emails.join(','),
+      subject: `✅ SUCCESS: Database Auto-Recovery Completed`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #28a745; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">✅ AUTO-RECOVERY SUCCESS</h1>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px; border-left: 5px solid #28a745;">
+            <h2 style="color: #155724; margin-top: 0;">Database Successfully Recovered</h2>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+              <tr>
+                <td style="padding: 8px; font-weight: bold; width: 30%;">Status:</td>
+                <td style="padding: 8px; color: #28a745; font-weight: bold;">🟢 FULLY OPERATIONAL</td>
+              </tr>
+              <tr style="background-color: #ffffff;">
+                <td style="padding: 8px; font-weight: bold;">Database:</td>
+                <td style="padding: 8px;">${dbConfig.host}:${dbConfig.port}/${dbConfig.serviceName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px; font-weight: bold;">Recovery Time:</td>
+                <td style="padding: 8px;">${recoveryDuration}</td>
+              </tr>
+              <tr style="background-color: #ffffff;">
+                <td style="padding: 8px; font-weight: bold;">Recovery Attempt:</td>
+                <td style="padding: 8px;">${attemptInfo}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px; font-weight: bold;">Completed At:</td>
+                <td style="padding: 8px;">${currentTime.toLocaleString()}</td>
+              </tr>
+            </table>
+            
+            <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #155724;">✅ RECOVERY STEPS COMPLETED</h3>
+              <ol style="color: #155724; margin: 10px 0;">
+                <li>✅ Stop Pods script executed successfully</li>
+                <li>✅ Database shutdown completed</li>
+                <li>✅ Database startup completed</li>
+                <li>✅ Database connection verified</li>
+                <li>✅ Start Pods script executed successfully</li>
+                <li>✅ All services restored to normal operation</li>
+              </ol>
+            </div>
+            
+            <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #0c5460;">📋 POST-RECOVERY ACTIONS</h3>
+              <ul style="color: #0c5460; margin: 10px 0;">
+                <li>Monitor application performance for any anomalies</li>
+                <li>Verify all critical business functions are working</li>
+                <li>Review database alert logs for any warnings</li>
+                <li>Check application logs for connection errors during recovery</li>
+                <li>Document the incident for future reference</li>
+                <li>Investigate the root cause of the database failure</li>
+              </ul>
+            </div>
+            
+            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #856404;">ℹ️ RECOVERY LOG SUMMARY</h3>
+              <div style="color: #856404; margin: 10px 0;">
+                <p><strong>Recovery initiated:</strong> Database connection failure detected</p>
+                <p><strong>Automatic recovery:</strong> Enabled (${this.isAutoRecoveryEnabled ? 'Active' : 'Inactive'})</p>
+                <p><strong>Recovery attempts:</strong> ${this.recoveryAttempts} of ${this.maxRecoveryAttempts} maximum</p>
+                <p><strong>Total duration:</strong> ${recoveryDuration}</p>
+                <p><strong>Final status:</strong> Successfully recovered</p>
+              </div>
+            </div>
+            
+            ${this.recoveryLog && this.recoveryLog.length > 0 ? `
+            <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #495057;">📜 Recovery Event Log</h3>
+              <div style="color: #495057; margin: 10px 0; font-family: monospace; font-size: 12px;">
+                ${this.recoveryLog.slice(-5).map(log => `
+                  <div style="padding: 2px 0;">
+                    [${new Date(log.timestamp).toLocaleTimeString()}] ${log.status}: ${log.message}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            ` : ''}
+          </div>
+          
+          <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
+            <p style="margin: 0;">Database Auto-Recovery System</p>
+            <p style="margin: 5px 0 0 0;">Recovery completed successfully - Normal monitoring resumed</p>
+          </div>
+        </div>
+      `
+    };
+    
+    // Send the email using the transporter directly
+    await emailService.transporter.sendMail(mailOptions);
+    console.log('📧 ✅ Recovery success alert email sent successfully');
+    return true;
+    
+  } catch (error) {
+    console.error('📧 ❌ Failed to send recovery success alert:', error);
+    return false;
+  }
+}
+
+async sendFailureAlert(errorMessage) {
+  try {
+    console.log('📧 Sending recovery failure alert...');
+    
+    // Get database config for email group
+    const dbConfigService = require('./dbConfigService');
+    const dbConfig = dbConfigService.getConfig();
+    
+    if (!dbConfig.emailGroupId) {
+      console.log('⚠️ No email group configured for database alerts');
+      return false;
+    }
+    
+    // Get email service
+    const emailService = require('./emailService');
+    
+    // Get the email group
+    const groups = emailService.getEmailGroups();
+    const targetGroup = groups.find(g => g.id === dbConfig.emailGroupId && g.enabled);
+    
+    if (!targetGroup || targetGroup.emails.length === 0) {
+      console.log('⚠️ No valid email group found for database alerts');
+      return false;
+    }
+    
+    const currentTime = new Date();
+    const mailOptions = {
+      from: emailService.getEmailConfig().user,
+      to: targetGroup.emails.join(','),
+      subject: `❌ FAILURE: Database Auto-Recovery Failed`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">❌ AUTO-RECOVERY FAILED</h1>
+          </div>
+          
+          <div style="background-color: #f8f9fa; padding: 20px; border-left: 5px solid #dc3545;">
+            <h2 style="color: #721c24; margin-top: 0;">Automatic Recovery Unsuccessful</h2>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+              <tr>
+                <td style="padding: 8px; font-weight: bold; width: 30%;">Status:</td>
+                <td style="padding: 8px; color: #dc3545; font-weight: bold;">🔴 RECOVERY FAILED</td>
+              </tr>
+              <tr style="background-color: #ffffff;">
+                <td style="padding: 8px; font-weight: bold;">Database:</td>
+                <td style="padding: 8px;">${dbConfig.host}:${dbConfig.port}/${dbConfig.serviceName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px; font-weight: bold;">Attempts Made:</td>
+                <td style="padding: 8px;">${this.recoveryAttempts} of ${this.maxRecoveryAttempts}</td>
+              </tr>
+              <tr style="background-color: #ffffff;">
+                <td style="padding: 8px; font-weight: bold;">Error:</td>
+                <td style="padding: 8px; color: #dc3545;">${errorMessage || 'Unknown error'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px; font-weight: bold;">Failed At:</td>
+                <td style="padding: 8px;">${currentTime.toLocaleString()}</td>
+              </tr>
+            </table>
+            
+            <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #721c24;">🚨 MANUAL INTERVENTION REQUIRED</h3>
+              <ul style="color: #721c24; margin: 10px 0; font-weight: bold;">
+                <li>Database remains DOWN and requires manual intervention</li>
+                <li>Auto-recovery has exhausted all attempts</li>
+                <li>Please investigate and resolve the issue immediately</li>
+              </ul>
+            </div>
+            
+            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #856404;">⚠️ RECOMMENDED ACTIONS</h3>
+              <ol style="color: #856404; margin: 10px 0;">
+                <li>Connect to the database server immediately</li>
+                <li>Check Oracle alert logs for errors</li>
+                <li>Verify disk space and system resources</li>
+                <li>Attempt manual database startup:
+                  <pre style="background: #f1f1f1; padding: 8px; margin: 5px 0;">
+sqlplus / as sysdba
+STARTUP;
+ALTER PLUGGABLE DATABASE ALL OPEN;</pre>
+                </li>
+                <li>Check network connectivity and listener status</li>
+                <li>Review the recovery log for failure points</li>
+              </ol>
+            </div>
+            
+            ${this.recoveryLog && this.recoveryLog.length > 0 ? `
+            <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #495057;">📜 Recovery Attempt Log</h3>
+              <div style="color: #495057; margin: 10px 0; font-family: monospace; font-size: 12px;">
+                ${this.recoveryLog.slice(-10).map(log => `
+                  <div style="padding: 2px 0; ${log.status === 'ERROR' ? 'color: #dc3545;' : ''}"">
+                    [${new Date(log.timestamp).toLocaleTimeString()}] ${log.status}: ${log.message}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            ` : ''}
+          </div>
+          
+          <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
+            <p style="margin: 0; color: #dc3545; font-weight: bold;">CRITICAL: Manual intervention required</p>
+            <p style="margin: 5px 0 0 0;">Database Auto-Recovery System</p>
+          </div>
+        </div>
+      `
+    };
+    
+    await emailService.transporter.sendMail(mailOptions);
+    console.log('📧 ✅ Recovery failure alert email sent successfully');
+    return true;
+    
+  } catch (error) {
+    console.error('📧 ❌ Failed to send recovery failure alert:', error);
+    return false;
+  }
+}
+
+
 
 async sendDatabaseVerificationFailedAlert(attemptNumber) {
   try {
