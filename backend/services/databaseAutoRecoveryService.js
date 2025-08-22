@@ -1144,7 +1144,176 @@ EXIT;`;
     });
   }*/
 
-  async restartDatabase() {
+    async restartDatabase() {
+  return new Promise((resolve) => {
+    try {
+      console.log('🔄 Attempting to restart Oracle database...');
+      
+      const { exec } = require('child_process');
+      const path = require('path');
+      const fs = require('fs');
+      
+      // Get credentials from environment
+      const sysUsername = process.env.DB_RESTART_USERNAME || 'sys';
+      const sysPassword = process.env.DB_RESTART_PASSWORD;
+      
+      if (!sysPassword) {
+        console.error('❌ DB_RESTART_PASSWORD not found in environment variables');
+        resolve(false);
+        return;
+      }
+      
+      // Get database configuration
+      const dbConfigService = require('./dbConfigService');
+      const dbConfig = dbConfigService.getConfig();
+      
+      console.log(`🔧 Using credentials: ${sysUsername}/****`);
+      console.log(`📊 Database config: ${dbConfig.host}:${dbConfig.port}/${dbConfig.serviceName}`);
+      
+      // Create temp directory for scripts
+      const tempDir = path.join(__dirname, '../temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      // Step 1: Try SHUTDOWN first (in case DB is running)
+      console.log('🛑 Step 1: Attempting SHUTDOWN IMMEDIATE (if running)...');
+      
+      const shutdownScriptPath = path.join(tempDir, 'auto_shutdown.sql');
+      
+      // FIXED: Create a more robust shutdown script
+      const shutdownScript = `
+-- Connect with error handling
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CONNECT ${sysUsername}/${sysPassword} AS SYSDBA
+
+-- Check if we're connected
+SELECT 'Connected to database' FROM dual;
+
+-- Attempt shutdown
+SHUTDOWN IMMEDIATE;
+EXIT;
+`;
+      
+      fs.writeFileSync(shutdownScriptPath, shutdownScript);
+      console.log('📝 Created shutdown script');
+      
+      // Execute shutdown (don't wait too long if DB is already down)
+      const shutdownCommand = process.platform === 'win32' 
+        ? `sqlplus /nolog @"${shutdownScriptPath}"`
+        : `sqlplus /nolog @${shutdownScriptPath}`;
+      
+      exec(shutdownCommand, { timeout: 30000 }, (shutdownError, shutdownStdout) => {
+        console.log('📋 Shutdown output:', shutdownStdout?.substring(0, 500));
+        
+        // Clean up
+        try { fs.unlinkSync(shutdownScriptPath); } catch(e) {}
+        
+        // Check if database was shut down or was already down
+        if (shutdownStdout?.includes('ORACLE instance shut down') || 
+            shutdownStdout?.includes('Database closed') ||
+            shutdownStdout?.includes('ORA-01034') || // Instance not started
+            shutdownStdout?.includes('ORA-01012') || // Not logged on
+            shutdownStdout?.includes('ORA-12514')) { // Service not available
+          
+          console.log('✅ Database is now shut down (or was already down)');
+        } else {
+          console.log('⚠️ Shutdown status unclear, proceeding with startup anyway...');
+        }
+        
+        // Wait before startup
+        console.log('⏳ Waiting 10 seconds before startup...');
+        
+        setTimeout(() => {
+          // Step 2: STARTUP
+          console.log('🚀 Step 2: Starting database...');
+          
+          const startupScriptPath = path.join(tempDir, 'auto_startup.sql');
+          
+          // FIXED: Create a proper startup script
+          // The key is to NOT use WHENEVER SQLERROR EXIT for startup
+          const startupScript = `
+-- Connect to idle instance (no error exit here)
+CONNECT ${sysUsername}/${sysPassword} AS SYSDBA
+
+-- Start the database
+STARTUP;
+
+-- Handle PDB if needed
+${dbConfig.serviceName.includes('PDB') ? `ALTER PLUGGABLE DATABASE ${dbConfig.serviceName} OPEN;` : ''}
+
+-- Verify database is up
+SELECT 'Database Status: ' || status FROM v$instance;
+
+EXIT;
+`;
+          
+          fs.writeFileSync(startupScriptPath, startupScript);
+          console.log('📝 Created startup script');
+          console.log('📄 Startup script content:', startupScript.replace(sysPassword, '****'));
+          
+          // Execute STARTUP
+          const startupCommand = process.platform === 'win32'
+            ? `sqlplus /nolog @"${startupScriptPath}"`
+            : `sqlplus /nolog @${startupScriptPath}`;
+          
+          console.log(`🔧 Executing: ${startupCommand}`);
+          
+          exec(startupCommand, { timeout: 120000 }, (startupError, startupStdout, startupStderr) => {
+            console.log('📋 STARTUP output:', startupStdout?.substring(0, 1000));
+            
+            // Clean up
+            try { fs.unlinkSync(startupScriptPath); } catch(e) {}
+            
+            // Check for success indicators
+            const startupSuccess = startupStdout && (
+              startupStdout.includes('Database mounted') ||
+              startupStdout.includes('Database opened') ||
+              startupStdout.includes('ORACLE instance started') ||
+              startupStdout.includes('Database Status: OPEN') ||
+              startupStdout.includes('Total System Global Area')
+            );
+            
+            // Check for PDB open (if applicable)
+            const pdbOpened = !dbConfig.serviceName.includes('PDB') || 
+              startupStdout?.includes('Pluggable database altered') ||
+              startupStdout?.includes('database opened');
+            
+            if (startupSuccess) {
+              console.log('✅ Oracle database started successfully');
+              
+              // Additional wait for PDB to fully open
+              if (dbConfig.serviceName.includes('PDB')) {
+                console.log('⏳ Waiting additional 10 seconds for PDB to fully open...');
+                setTimeout(() => {
+                  console.log('✅ Database restart completed successfully');
+                  resolve(true);
+                }, 10000);
+              } else {
+                console.log('✅ Database restart completed successfully');
+                resolve(true);
+              }
+            } else if (startupStdout?.includes('ORA-01081')) {
+              // Database was already started
+              console.log('✅ Database was already running');
+              resolve(true);
+            } else {
+              console.error('❌ Database startup failed or unclear');
+              console.error('Startup output:', startupStdout);
+              resolve(false);
+            }
+          });
+          
+        }, 10000); // 10 second wait between shutdown and startup
+      });
+      
+    } catch (error) {
+      console.error('❌ Database restart process failed:', error);
+      resolve(false);
+    }
+  });
+}
+  /*async restartDatabase() {
     try {
       console.log('🔄 Starting database restart process...');
       
@@ -1187,7 +1356,7 @@ EXIT;`;
       console.error('❌ Exception during database restart:', error);
       return false;
     }
-  }
+  }*/
   // Check if database is up (simple connection test)
   /*async checkDatabaseStatus() {
     try {
