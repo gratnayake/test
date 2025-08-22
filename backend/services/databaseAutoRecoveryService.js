@@ -378,7 +378,7 @@ async sendDatabaseVerificationFailedAlert(attemptNumber) {
       </div>
     `;
     
-    await emailService.sendEmail({
+    await emailService.transporter.sendMail({
       to: targetGroup.emails,
       subject: subject,
       html: html
@@ -415,7 +415,7 @@ async sendDatabaseRestartFailedAlert(attemptNumber) {
       </div>
     `;
     
-    await emailService.sendEmail({
+    await emailService.transporter.sendMail({
       to: targetGroup.emails,
       subject: subject,
       html: html
@@ -451,7 +451,7 @@ async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
       </div>
     `;
     
-    await emailService.sendEmail({
+    await emailService.transporter.sendMail({
       to: targetGroup.emails,
       subject: subject,
       html: html
@@ -705,7 +705,7 @@ async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
       </div>
     `;
     
-    await emailService.sendEmail({
+    await emailService.transporter.sendMail({
       to: targetGroup.emails,
       subject: subject,
       html: html
@@ -1001,7 +1001,7 @@ async sendAnyAlert(subject, html) {
       return; // Already logged why in getEmailGroup()
     }
     
-    await emailService.sendEmail({
+    await emailService.transporter.sendMail({
       to: targetGroup.emails,
       subject: subject,
       html: html
