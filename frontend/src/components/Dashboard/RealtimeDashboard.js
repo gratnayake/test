@@ -58,7 +58,6 @@ const RealtimeDashboard = () => {
       await Promise.all([
         loadDatabaseStatus(),
         loadDashboardData(),
-        loadTablespaceData(),
         loadMonitoringStatus()
       ]);
     } catch (error) {
@@ -101,16 +100,7 @@ const RealtimeDashboard = () => {
     }
   };
 
-  const loadTablespaceData = async () => {
-    try {
-      const response = await databaseAPI.getTablespace();
-      if (response.success) {
-        setTablespaceData(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to load tablespace data:', error);
-    }
-  };
+
 
   const loadMonitoringStatus = async () => {
     try {
@@ -172,52 +162,7 @@ const RealtimeDashboard = () => {
     }
   };
 
-  const getTablespaceChart = () => {
-    if (!tablespaceData.length) return null;
-
-    const chartData = tablespaceData.map(ts => ({
-      name: ts.name,
-      usage: ts.usagePercent,
-      type: 'Used Space %'
-    }));
-
-    const config = {
-        data: chartData,
-        xField: 'name',
-        yField: 'usage',
-        seriesField: 'type',
-        color: ({ usage }) => {
-            if (usage > 90) return '#ff4d4f';
-            if (usage > 75) return '#fa8c16';
-            return '#52c41a';
-        },
-        point: {
-            size: 5,
-            shape: 'diamond',
-        },
-        // Add theme configuration for dark mode
-        theme: isDarkMode ? 'dark' : 'light',
-        // Add axis styling for dark mode
-        xAxis: {
-            label: {
-            style: {
-                fill: isDarkMode ? '#ffffff' : '#000000',
-            },
-            },
-        },
-        yAxis: {
-            label: {
-            style: {
-                fill: isDarkMode ? '#ffffff' : '#000000',
-            },
-            },
-        },
-        };
-
-    return <Line {...config} />;
-  };
-
-  return (
+   return (
     <div>
       {loading && (
       <Alert
