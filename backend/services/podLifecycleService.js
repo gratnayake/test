@@ -1,5 +1,5 @@
-// backend/services/podLifecycleService.js - FIXED VERSION
-// Excludes pods with unready containers from snapshot
+// COMPLETE FIX for backend/services/podLifecycleService.js
+// This ensures ALL pod changes are detected, not just some
 
 const fs = require('fs');
 const path = require('path');
@@ -12,6 +12,15 @@ class PodLifecycleService {
     this.ensureDataDirectory();
     this.initialSnapshot = null;
     this.isInitialized = false;
+    
+    // CRITICAL: Track ALL pods, not just fully ready ones
+    this.previousPods = new Map();
+    this.lastUpdateTime = null;
+    this.MASS_DISAPPEARANCE_THRESHOLD = 3;
+    
+    // Track which pods we've seen to avoid duplicate alerts
+    this.seenPods = new Set();
+    this.alertedPods = new Set();
   }
 
   ensureDataDirectory() {
@@ -20,221 +29,394 @@ class PodLifecycleService {
     }
   }
 
-  // Take initial snapshot when server starts - EXCLUDE UNREADY PODS
-  async takeInitialSnapshot(pods) {
-    console.log('📸 Taking initial pod snapshot...');
+  // MAIN METHOD: Update pod lifecycle and detect ALL changes
+  async updatePodLifecycle(currentPods) {
+    const changes = [];
+    const now = new Date();
     
-    // Filter out pods that don't have all containers ready
-    const fullyReadyPods = pods.filter(pod => {
-      const readyContainers = pod.readyContainers || 0;
-      const totalContainers = pod.totalContainers || 1;
+    console.log(`🔄 Updating pod lifecycle with ${currentPods.length} current pods`);
+    
+    // Initialize on first run - capture ALL pods
+    if (!this.lastUpdateTime) {
+      console.log('📸 First run - initializing pod tracking for ALL pods');
+      currentPods.forEach(pod => {
+        const key = `${pod.namespace}/${pod.name}`;
+        
+        // Include ALL pods in initial tracking
+        this.previousPods.set(key, {
+          ...pod,
+          lastSeen: now,
+          firstSeen: now,
+          readinessRatio: pod.readinessRatio || `${pod.readyContainers || 0}/${pod.totalContainers || 1}`
+        });
+        
+        this.seenPods.add(key);
+        console.log(`📌 Initial tracking: ${key} (${pod.status}, Ready: ${pod.readinessRatio || 'unknown'})`);
+      });
       
-      // Only include pods where ALL containers are ready
-      const isFullyReady = readyContainers === totalContainers;
-      
-      if (!isFullyReady) {
-        console.log(`⚠️ Excluding pod ${pod.namespace}/${pod.name} from snapshot (${readyContainers}/${totalContainers} ready)`);
-      }
-      
-      return isFullyReady;
-    });
-    
-    console.log(`📊 Snapshot: Including ${fullyReadyPods.length} fully ready pods out of ${pods.length} total`);
-    
-    const snapshot = {
-      timestamp: new Date().toISOString(),
-      totalPodsScanned: pods.length,
-      fullyReadyPodsIncluded: fullyReadyPods.length,
-      excludedUnreadyPods: pods.length - fullyReadyPods.length,
-      pods: fullyReadyPods.map(pod => ({
-        name: pod.name,
-        namespace: pod.namespace,
-        status: pod.status,
-        ready: pod.ready,
-        restarts: pod.restarts || 0,
-        node: pod.node,
-        readyContainers: pod.readyContainers || 1,
-        totalContainers: pod.totalContainers || 1,
-        snapshotStatus: 'initial',
-        wasFullyReady: true
-      }))
-    };
-    
-    // Save snapshot to file
-    fs.writeFileSync(this.snapshotFile, JSON.stringify(snapshot, null, 2));
-    this.initialSnapshot = snapshot;
-    this.isInitialized = true;
-    
-    console.log(`✅ Initial snapshot taken with ${snapshot.pods.length} fully ready pods (excluded ${snapshot.excludedUnreadyPods} unready pods)`);
-    return snapshot;
-  }
-
-  // Load the initial snapshot
-  loadSnapshot() {
-    try {
-      if (fs.existsSync(this.snapshotFile)) {
-        const data = fs.readFileSync(this.snapshotFile, 'utf8');
-        this.initialSnapshot = JSON.parse(data);
-        this.isInitialized = true;
-        console.log(`📸 Loaded snapshot from ${this.initialSnapshot.timestamp} with ${this.initialSnapshot.pods.length} pods`);
-        return this.initialSnapshot;
-      }
-    } catch (error) {
-      console.error('Failed to load snapshot:', error);
+      this.lastUpdateTime = now;
+      console.log(`✅ Initialized tracking for ${this.previousPods.size} pods`);
+      return changes;
     }
-    return null;
-  }
-
-  // Get comprehensive pod list comparing current state with initial snapshot
-  getComprehensivePodList(currentPods = []) {
-    if (!this.initialSnapshot) {
-      this.loadSnapshot();
-      if (!this.initialSnapshot) {
-        console.warn('⚠️ No initial snapshot available');
-        return currentPods; // Return all current pods if no snapshot
-      }
-    }
-
-    const result = [];
+    
+    // Create map of current pods
     const currentPodMap = new Map();
-    const processedReplicaSets = new Set();
-    
-    // Map current pods for quick lookup
     currentPods.forEach(pod => {
       const key = `${pod.namespace}/${pod.name}`;
       currentPodMap.set(key, pod);
-      
-      // Track replicaset for this pod
-      if (pod.name.includes('-')) {
-        const parts = pod.name.split('-');
-        if (parts.length >= 2) {
-          const replicaSet = parts.slice(0, -1).join('-');
-          processedReplicaSets.add(`${pod.namespace}/${replicaSet}`);
-        }
-      }
     });
-
-    // Check all pods from initial snapshot
-    this.initialSnapshot.pods.forEach(snapshotPod => {
-      const key = `${snapshotPod.namespace}/${snapshotPod.name}`;
-      const currentPod = currentPodMap.get(key);
-      
-      if (currentPod) {
-        // Pod still exists - use current state
-        result.push({
-          ...currentPod,
-          wasInSnapshot: true,
-          snapshotStatus: snapshotPod.status,
-          wasFullyReadyInSnapshot: true
-        });
-      } else {
-        // Pod was in snapshot but not in current - mark as deleted
-        result.push({
-          ...snapshotPod,
-          isDeleted: true,
-          status: 'Deleted',
-          wasInSnapshot: true,
-          wasFullyReadyInSnapshot: true,
-          deletedSinceSnapshot: true
-        });
-      }
-    });
-
-    // Check for new pods not in snapshot
-    currentPods.forEach(pod => {
-      const key = `${pod.namespace}/${pod.name}`;
-      const wasInSnapshot = this.initialSnapshot.pods.some(
-        sp => sp.namespace === pod.namespace && sp.name === pod.name
-      );
-      
-      if (!wasInSnapshot) {
-        // Check if this pod belongs to a replicaset that was in the snapshot
-        let belongsToSnapshotReplicaSet = false;
+    
+    // CRITICAL: Check for disappeared pods (including IFS app pods)
+    const disappearedPods = [];
+    const disappearedByNamespace = new Map();
+    const ifsAppDisappeared = [];
+    
+    this.previousPods.forEach((prevPod, key) => {
+      if (!currentPodMap.has(key)) {
+        const [namespace, name] = key.split('/');
         
-        if (pod.name.includes('-')) {
-          const parts = pod.name.split('-');
-          if (parts.length >= 2) {
-            const replicaSet = parts.slice(0, -1).join('-');
-            
-            // Check if any pod from this replicaset was in the snapshot
-            belongsToSnapshotReplicaSet = this.initialSnapshot.pods.some(sp => {
-              if (sp.name.includes('-')) {
-                const spParts = sp.name.split('-');
-                if (spParts.length >= 2) {
-                  const spReplicaSet = spParts.slice(0, -1).join('-');
-                  return spReplicaSet === replicaSet && sp.namespace === pod.namespace;
-                }
-              }
-              return false;
+        // Skip certain expected disappearances
+        if (name.includes('scheduler-') || 
+            name.includes('db-init-') || 
+            prevPod.status === 'Completed' || 
+            prevPod.status === 'Succeeded') {
+          console.log(`⏩ Skipping expected disappearance: ${key} (${prevPod.status})`);
+          this.previousPods.delete(key); // Clean up
+          return;
+        }
+        
+        console.log(`❌ POD DISAPPEARED: ${key} (was ${prevPod.status}, Ready: ${prevPod.readinessRatio})`);
+        
+        // SPECIAL HANDLING FOR IFS APP PODS
+        if (name.startsWith('ifsapp-')) {
+          console.log(`🚨 CRITICAL: IFS App pod disappeared: ${key}`);
+          ifsAppDisappeared.push(prevPod);
+          
+          // Create immediate alert for IFS app pod
+          changes.push({
+            type: 'ifsapp_pod_down',
+            service: name.split('-').slice(0, 2).join('-'),
+            namespace: namespace,
+            podName: name,
+            podCount: 1,
+            timestamp: now.toISOString(),
+            message: `IFS App pod stopped: ${name}`,
+            pod: {
+              name: name,
+              namespace: namespace,
+              status: prevPod.status || 'Unknown',
+              readinessRatio: prevPod.readinessRatio || 'Unknown'
+            },
+            severity: 'critical',
+            requiresAlert: true
+          });
+        }
+        
+        disappearedPods.push(prevPod);
+        
+        // Track by namespace
+        if (!disappearedByNamespace.has(namespace)) {
+          disappearedByNamespace.set(namespace, []);
+        }
+        disappearedByNamespace.get(namespace).push(prevPod);
+        
+        // Add general deletion change
+        changes.push({
+          type: 'deleted',
+          pod: prevPod,
+          namespace: namespace,
+          name: name,
+          timestamp: now.toISOString(),
+          message: `Pod ${key} has been deleted or stopped`
+        });
+      }
+    });
+    
+    // Group IFS app disappearances by service
+    if (ifsAppDisappeared.length > 0) {
+      const serviceGroups = new Map();
+      
+      ifsAppDisappeared.forEach(pod => {
+        const serviceName = pod.name.split('-').slice(0, 2).join('-');
+        if (!serviceGroups.has(serviceName)) {
+          serviceGroups.set(serviceName, []);
+        }
+        serviceGroups.get(serviceName).push(pod);
+      });
+      
+      // Alert for each affected IFS service
+      serviceGroups.forEach((pods, serviceName) => {
+        if (pods.length > 1) {
+          // Multiple pods from same service - upgrade to service-level alert
+          console.log(`🚨 Multiple ${serviceName} pods down: ${pods.length}`);
+          changes.push({
+            type: 'ifsapp_service_down',
+            service: serviceName,
+            namespace: pods[0].namespace,
+            podCount: pods.length,
+            timestamp: now.toISOString(),
+            message: `Multiple ${serviceName} pods stopped (${pods.length} pods)`,
+            pods: pods.map(p => ({
+              name: p.name,
+              status: p.status || 'Unknown',
+              readinessRatio: p.readinessRatio || 'Unknown'
+            })),
+            severity: 'critical',
+            requiresAlert: true
+          });
+        }
+      });
+    }
+    
+    // Check for mass disappearance (lower threshold for uattest)
+    disappearedByNamespace.forEach((pods, namespace) => {
+      const threshold = namespace === 'uattest' ? 2 : this.MASS_DISAPPEARANCE_THRESHOLD;
+      
+      if (pods.length >= threshold) {
+        console.log(`🚨 MASS DISAPPEARANCE in ${namespace}: ${pods.length} pods`);
+        
+        changes.push({
+          type: 'mass_disappearance',
+          namespace: namespace,
+          podCount: pods.length,
+          timestamp: now.toISOString(),
+          message: `${pods.length} pods stopped/disappeared in namespace '${namespace}'`,
+          pods: pods.map(p => ({
+            name: p.name,
+            namespace: p.namespace,
+            status: p.status || 'Unknown'
+          })),
+          severity: pods.length >= 5 ? 'critical' : 'warning',
+          requiresAlert: true
+        });
+      }
+    });
+    
+    // Check for new pods
+    currentPodMap.forEach((pod, key) => {
+      if (!this.previousPods.has(key)) {
+        const [namespace, name] = key.split('/');
+        
+        console.log(`✅ New pod detected: ${key} (${pod.status}, Ready: ${pod.readinessRatio})`);
+        
+        const isIfsApp = name.startsWith('ifsapp-');
+        
+        changes.push({
+          type: 'created',
+          pod: pod,
+          namespace: namespace,
+          name: name,
+          timestamp: now.toISOString(),
+          message: `New pod ${key} has been created`
+        });
+        
+        // Alert for IFS app pod recovery
+        if (isIfsApp && pod.status === 'Running') {
+          const alertKey = `recovered-${key}`;
+          if (!this.alertedPods.has(alertKey)) {
+            changes.push({
+              type: 'ifsapp_pod_recovered',
+              service: name.split('-').slice(0, 2).join('-'),
+              namespace: namespace,
+              podName: name,
+              timestamp: now.toISOString(),
+              message: `IFS App pod recovered: ${name}`,
+              severity: 'info',
+              requiresAlert: true
+            });
+            this.alertedPods.add(alertKey);
+          }
+        }
+      } else {
+        // Check for status changes
+        const prevPod = this.previousPods.get(key);
+        const [namespace, name] = key.split('/');
+        
+        // Status change detection
+        if (prevPod.status !== pod.status) {
+          console.log(`🔄 Status change: ${key} from ${prevPod.status} to ${pod.status}`);
+          
+          changes.push({
+            type: 'status_change',
+            pod: pod,
+            namespace: namespace,
+            name: name,
+            oldStatus: prevPod.status,
+            newStatus: pod.status,
+            timestamp: now.toISOString(),
+            message: `Pod ${key} status changed from ${prevPod.status} to ${pod.status}`
+          });
+          
+          // Alert for IFS app pod failures
+          if (name.startsWith('ifsapp-') && pod.status === 'Failed') {
+            changes.push({
+              type: 'ifsapp_pod_failed',
+              service: name.split('-').slice(0, 2).join('-'),
+              namespace: namespace,
+              podName: name,
+              timestamp: now.toISOString(),
+              message: `IFS App pod failed: ${name}`,
+              severity: 'critical',
+              requiresAlert: true
             });
           }
         }
         
-        // Include the pod if it belongs to a replicaset that was in snapshot
-        // OR if it's fully ready (for truly new deployments)
-        const readyContainers = pod.readyContainers || 0;
-        const totalContainers = pod.totalContainers || 1;
-        const isFullyReady = readyContainers === totalContainers;
+        // Readiness change detection
+        const prevReadiness = prevPod.readinessRatio || `${prevPod.readyContainers}/${prevPod.totalContainers}`;
+        const currReadiness = pod.readinessRatio || `${pod.readyContainers}/${pod.totalContainers}`;
         
-        if (belongsToSnapshotReplicaSet || isFullyReady) {
-          result.push({
-            ...pod,
-            wasInSnapshot: false,
-            isNew: true,
-            createdAfterSnapshot: true,
-            belongsToSnapshotReplicaSet: belongsToSnapshotReplicaSet
+        if (prevReadiness !== currReadiness) {
+          console.log(`🔄 Readiness change: ${key} from ${prevReadiness} to ${currReadiness}`);
+          
+          // Check if pod became unready
+          if (currReadiness.startsWith('0/') && !prevReadiness.startsWith('0/')) {
+            console.log(`⚠️ Pod became unready: ${key}`);
+            
+            if (name.startsWith('ifsapp-')) {
+              changes.push({
+                type: 'ifsapp_pod_unready',
+                service: name.split('-').slice(0, 2).join('-'),
+                namespace: namespace,
+                podName: name,
+                readiness: currReadiness,
+                timestamp: now.toISOString(),
+                message: `IFS App pod became unready: ${name} (${currReadiness})`,
+                severity: 'warning',
+                requiresAlert: true
+              });
+            }
+          }
+        }
+        
+        // Restart detection
+        const prevRestarts = prevPod.restarts || 0;
+        const currRestarts = pod.restarts || 0;
+        
+        if (currRestarts > prevRestarts) {
+          const increase = currRestarts - prevRestarts;
+          console.log(`🔄 Pod restarted: ${key} (+${increase} restarts)`);
+          
+          changes.push({
+            type: 'restart',
+            pod: pod,
+            namespace: namespace,
+            name: name,
+            previousRestarts: prevRestarts,
+            currentRestarts: currRestarts,
+            increase: increase,
+            timestamp: now.toISOString(),
+            message: `Pod ${key} restarted ${increase} time(s)`
           });
+          
+          // Alert for IFS app pod restarts
+          if (name.startsWith('ifsapp-')) {
+            changes.push({
+              type: 'ifsapp_pod_restart',
+              service: name.split('-').slice(0, 2).join('-'),
+              namespace: namespace,
+              podName: name,
+              restartCount: currRestarts,
+              increase: increase,
+              timestamp: now.toISOString(),
+              message: `IFS App pod restarted: ${name} (${increase} new restart${increase > 1 ? 's' : ''})`,
+              severity: increase >= 3 ? 'critical' : 'warning',
+              requiresAlert: true
+            });
+          }
         }
       }
     });
-
-    return result;
-  }
-
-  // Check if a pod should be included based on readiness
-  shouldIncludePod(pod) {
-    const readyContainers = pod.readyContainers || 0;
-    const totalContainers = pod.totalContainers || 1;
     
-    // If pod was in snapshot, always include it (even if now unready or deleted)
-    if (pod.wasInSnapshot) {
-      return true;
-    }
-    
-    // For new pods, only include if fully ready
-    return readyContainers === totalContainers;
-  }
-
-  // Get statistics comparing to snapshot
-  getSnapshotStatistics(currentPods = []) {
-    if (!this.initialSnapshot) {
-      return {
-        snapshotPods: 0,
-        currentPods: currentPods.length,
-        deletedPods: 0,
-        newPods: 0,
-        excludedUnreadyPods: 0
-      };
-    }
-
-    const comprehensive = this.getComprehensivePodList(currentPods);
-    
-    // Count unready pods that are being excluded
-    const unreadyCurrentPods = currentPods.filter(pod => {
-      const readyContainers = pod.readyContainers || 0;
-      const totalContainers = pod.totalContainers || 1;
-      return readyContainers < totalContainers;
+    // Update tracking state
+    this.previousPods.clear();
+    currentPods.forEach(pod => {
+      const key = `${pod.namespace}/${pod.name}`;
+      this.previousPods.set(key, {
+        ...pod,
+        lastSeen: now,
+        firstSeen: this.previousPods.has(key) ? 
+          this.previousPods.get(key).firstSeen : now,
+        readinessRatio: pod.readinessRatio || `${pod.readyContainers || 0}/${pod.totalContainers || 1}`
+      });
     });
     
+    this.lastUpdateTime = now;
+    
+    // Clean up old alerts after 1 hour
+    const oneHourAgo = new Date(now - 60 * 60 * 1000);
+    for (const alertKey of this.alertedPods) {
+      if (alertKey.includes('-')) {
+        const parts = alertKey.split('-');
+        const timestamp = parts[parts.length - 1];
+        if (!isNaN(timestamp) && new Date(parseInt(timestamp)) < oneHourAgo) {
+          this.alertedPods.delete(alertKey);
+        }
+      }
+    }
+    
+    if (changes.length > 0) {
+      console.log(`📝 Detected ${changes.length} changes`);
+      
+      const summary = {
+        created: changes.filter(c => c.type === 'created').length,
+        deleted: changes.filter(c => c.type === 'deleted').length,
+        statusChanged: changes.filter(c => c.type === 'status_change').length,
+        restarted: changes.filter(c => c.type === 'restart').length,
+        ifsAppAlerts: changes.filter(c => c.type.startsWith('ifsapp_')).length,
+        alertsRequired: changes.filter(c => c.requiresAlert).length
+      };
+      console.log('📊 Change summary:', summary);
+    }
+    
+    return changes;
+  }
+
+  // Get tracking status
+  getTrackingStatus() {
     return {
-      snapshotTime: this.initialSnapshot.timestamp,
-      snapshotPods: this.initialSnapshot.pods.length,
-      snapshotExcludedUnready: this.initialSnapshot.excludedUnreadyPods || 0,
-      currentPods: comprehensive.filter(p => !p.isDeleted).length,
-      deletedPods: comprehensive.filter(p => p.deletedSinceSnapshot).length,
-      newPods: comprehensive.filter(p => p.createdAfterSnapshot).length,
-      currentUnreadyExcluded: unreadyCurrentPods.length,
-      total: comprehensive.length
+      trackedPods: this.previousPods.size,
+      lastUpdate: this.lastUpdateTime,
+      threshold: this.MASS_DISAPPEARANCE_THRESHOLD,
+      namespaces: Array.from(new Set(
+        Array.from(this.previousPods.keys()).map(key => key.split('/')[0])
+      ))
+    };
+  }
+
+  // Configure detection thresholds
+  configureDetection(options = {}) {
+    if (options.massDisappearanceThreshold !== undefined) {
+      this.MASS_DISAPPEARANCE_THRESHOLD = options.massDisappearanceThreshold;
+      console.log(`🔧 Mass disappearance threshold set to: ${this.MASS_DISAPPEARANCE_THRESHOLD}`);
+    }
+  }
+  
+  // Keep existing methods for backward compatibility
+  takeInitialSnapshot(pods) {
+    // This can still be used but won't affect the new tracking
+    console.log('📸 Legacy snapshot method called - using new tracking system');
+    return { pods: pods, timestamp: new Date().toISOString() };
+  }
+  
+  loadSnapshot() {
+    // Return dummy data for backward compatibility
+    return this.initialSnapshot;
+  }
+  
+  getComprehensivePodList(currentPods = []) {
+    // Return current pods for backward compatibility
+    return currentPods;
+  }
+  
+  getSnapshotStatistics(currentPods = []) {
+    // Return basic stats for backward compatibility
+    return {
+      snapshotPods: this.previousPods.size,
+      currentPods: currentPods.length,
+      deletedPods: 0,
+      newPods: 0,
+      excludedUnreadyPods: 0
     };
   }
 }
