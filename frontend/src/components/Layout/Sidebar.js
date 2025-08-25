@@ -101,11 +101,6 @@ const Sidebar = ({ currentPage, onPageChange }) => {
           key: 'database-config',
           icon: <SettingOutlined />,
           label: 'Database Config',
-        },
-        {
-          key: 'threshold-config',
-          icon: <AlertOutlined />,
-          label: 'Alert Thresholds',
         }
       );
     }

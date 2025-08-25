@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Form, Input, Button, Alert, Typography } from 'antd';
+import { Card, Form, Input, Button, Typography } from 'antd';
 import { UserOutlined, LockOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -8,7 +8,7 @@ import ThemeToggle from '../Layout/ThemeToggle';
 const { Title } = Typography;
 
 const LoginForm = () => {
-  const { login, loading, backendStatus, checkBackendConnection } = useAuth();
+  const { login, loading, backendStatus } = useAuth();
   const { isDarkMode } = useTheme();
   const [form] = Form.useForm();
 

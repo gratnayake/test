@@ -1,21 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Statistic, Progress, Typography, Tag } from 'antd';
+import { Row, Col, Card, Progress, Typography, Tag } from 'antd';
 import { Line } from '@ant-design/plots';
-import { DatabaseOutlined, UserOutlined } from '@ant-design/icons';
-import DowntimeTable from './DowntimeTable';
 import { useAuth } from '../../contexts/AuthContext';
-import { databaseAPI, userAPI, monitoringAPI } from '../../services/api';
+import { databaseAPI } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const { Text } = Typography;
 
 const Dashboard = () => {
   const { isAdmin } = useAuth();
-  const [userCount, setUserCount] = useState(0);
-  const [dbStatus, setDbStatus] = useState('online');
-  const [realDbStatus, setRealDbStatus] = useState(null);
-  const [monitoringStatus, setMonitoringStatus] = useState(null);
-  const [dashboardData, setDashboardData] = useState(null);
   const [tablespaceData, setTablespaceData] = useState([]);
   const { isDarkMode } = useTheme();
   const loadTablespaceData = async () => {
@@ -31,51 +24,11 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (isAdmin) {
-      loadUserCount();
+      loadTablespaceData(); 
     }
-    loadTablespaceData(); 
+    
   }, [isAdmin]);
 
-  const loadRealData = async () => {
-  try {
-    const [dbResponse, monitoringResponse] = await Promise.all([
-      databaseAPI.getStatus(),
-      monitoringAPI.getStatus()
-    ]);
-    
-    if (dbResponse.success) {
-      setRealDbStatus(dbResponse);
-    }
-    if (monitoringResponse.success) {
-      setMonitoringStatus(monitoringResponse.status);
-    }
-
-    const dashboardResponse = await databaseAPI.getDashboard();
-    if (dashboardResponse.success) {
-    setDashboardData(dashboardResponse.data);
-    }
-  } catch (error) {
-    console.error('Failed to load real data:', error);
-  }
-};
-
- useEffect(() => {
-  loadRealData();
-  const interval = setInterval(loadRealData, 10000); // Every 10 seconds
-  return () => clearInterval(interval);
-}, []);
-
-
-  const loadUserCount = async () => {
-    try {
-      const response = await userAPI.getAll();
-      if (response.success) {
-        setUserCount(response.users.length);
-      }
-    } catch (error) {
-      console.error('Failed to load user count:', error);
-    }
-  };
 
 
   const getTablespaceChart = () => {
@@ -125,47 +78,7 @@ const Dashboard = () => {
 
   return (
     <div>
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-                title="Database Status"
-                value={realDbStatus?.status || 'UNKNOWN'}
-                valueStyle={{ color: realDbStatus?.status === 'UP' ? '#3f8600' : '#cf1322' }}
-                prefix={<DatabaseOutlined />}
-                />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-                title="Database Uptime"
-                value={dashboardData?.instance?.uptimeDays || 0}
-                precision={1}
-                suffix="days"
-                valueStyle={{ color: '#3f8600' }}
-                />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Total Users"
-              value={isAdmin ? userCount : '-'}
-              prefix={<UserOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-        <Card>
-            <Statistic
-            title="Monitoring Status"
-            value={monitoringStatus?.isMonitoring ? 'ACTIVE' : 'STOPPED'}
-            valueStyle={{ color: monitoringStatus?.isMonitoring ? '#3f8600' : '#cf1322' }}
-            />
-        </Card>
-        </Col>
-      </Row>
+      
 {/* Tablespace Usage Chart */}
 <Card title="Tablespace Usage" style={{ marginBottom: 24 }}>
   {tablespaceData.length > 0 ? (
