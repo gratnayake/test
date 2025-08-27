@@ -594,7 +594,7 @@ async checkForMissingWorkloadsImmediate(currentWorkloads, emailGroupId) {
     console.log(`📦 BATCH STOP detected: ${stoppedWorkloads.length} workloads stopped together`);
     
     // Send ONE batch alert for all stopped workloads
-    await this.sendBatchAlert( emailGroupId);
+    await this.sendBatchStopAlert(stoppedWorkloads, emailGroupId);
     
     // Mark all as alerted
     for (const stopped of stoppedWorkloads) {
