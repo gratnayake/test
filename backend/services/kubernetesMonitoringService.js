@@ -1564,7 +1564,7 @@ async sendBatchAlert(emailGroupId) {
   } catch (error) {
     console.error('❌ Batch alert generation failed:', error);
   }
-}}
+}
 generateEnhancedAlertSection(title, alerts, color) {
   if (alerts.length === 0) return '';
 
