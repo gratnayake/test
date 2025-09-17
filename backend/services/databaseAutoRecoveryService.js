@@ -915,7 +915,7 @@ async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
     const config = this.getConfig(); // Auto-recovery config for attempt numbers
     const timestamp = new Date();
     const subject = `🔄 AUTO-RECOVERY: PODS Stopped`;
-    
+    const currentTime = new Date();
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background-color: #17a2b8; color: white; padding: 20px; text-align: center;">
