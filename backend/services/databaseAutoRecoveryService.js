@@ -1489,21 +1489,11 @@ EXIT;
           
           // FIXED: Create a proper startup script
           // The key is to NOT use WHENEVER SQLERROR EXIT for startup
-          const startupScript = `
--- Connect to idle instance (no error exit here)
-CONNECT ${sysUsername}/${sysPassword} AS SYSDBA
-
--- Start the database
-STARTUP;
-
--- Handle PDB if needed
-${dbConfig.serviceName.includes('PDB') ? `ALTER PLUGGABLE DATABASE ${dbConfig.serviceName} OPEN;` : ''}
-
--- Verify database is up
-SELECT 'Database Status: ' || status FROM v$instance;
-
-EXIT;
-`;
+          const startupScript = `CONNECT ${sysUsername}/${sysPassword} AS SYSDBA
+                                STARTUP;
+                                ALTER PLUGGABLE DATABASE XEPDB1 OPEN;
+                                SELECT 'Database Status: ' || status FROM v$instance;
+                                EXIT;`;
           
           fs.writeFileSync(startupScriptPath, startupScript);
           console.log('📝 Created startup script');
