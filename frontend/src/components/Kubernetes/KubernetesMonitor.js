@@ -666,7 +666,7 @@ const EnhancedKubernetesMonitor = () => {
             <Card>
               <Statistic
                 title="Total"
-                value={statistics.total}
+                value={`${pods.length} pods`}
                 valueStyle={{ color: '#1890ff' }}
               />
             </Card>
