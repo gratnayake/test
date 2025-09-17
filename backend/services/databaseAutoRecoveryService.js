@@ -914,74 +914,52 @@ async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
     
     const config = this.getConfig(); // Auto-recovery config for attempt numbers
     const timestamp = new Date();
-    const subject = `🛑 Auto-Recovery: Pods Stopped (Step 1/4) - Attempt ${attemptNumber}`;
+    const subject = `🔄 AUTO-RECOVERY: PODS Stopped`;
     
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #dc3545; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px;">🛑 PODS STOPPED</h1>
-          <p style="margin: 8px 0 0 0; font-size: 16px;">Auto-Recovery Step 1 of 4</p>
-        </div>
-        
-        <div style="background-color: #f8f9fa; padding: 20px;">
-          <div style="background-color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-            <h2 style="margin-top: 0; color: #333;">Auto-Recovery Progress</h2>
-            
-            <div style="margin: 15px 0;">
-              <div style="display: flex; align-items: center; margin: 10px 0;">
-                <div style="width: 30px; height: 30px; border-radius: 50%; background: #28a745; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">✓</div>
-                <div>
-                  <strong>Step 1: Stop All Pods</strong> - COMPLETED
-                  <div style="color: #666; font-size: 12px;">Releasing all database connections</div>
-                </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; margin: 10px 0;">
-                <div style="width: 30px; height: 30px; border-radius: 50%; background: #ffc107; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">2</div>
-                <div>
-                  <strong>Step 2: Restart Database</strong> - PENDING
-                  <div style="color: #666; font-size: 12px;">Will restart Oracle database</div>
-                </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; margin: 10px 0;">
-                <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">3</div>
-                <div>
-                  <strong>Step 3: Verify Database</strong> - WAITING
-                  <div style="color: #666; font-size: 12px;">Will verify database is accessible</div>
-                </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; margin: 10px 0;">
-                <div style="width: 30px; height: 30px; border-radius: 50%; background: #6c757d; color: white; display: flex; align-items: center; justify-content: center; margin-right: 10px;">4</div>
-                <div>
-                  <strong>Step 4: Start Pods</strong> - WAITING
-                  <div style="color: #666; font-size: 12px;">Will restore all pods</div>
-                </div>
-              </div>
-            </div>
-            
-            <table style="width: 100%; margin-top: 15px;">
-              <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #dee2e6;"><strong>Time:</strong></td>
-                <td style="padding: 8px; border-bottom: 1px solid #dee2e6;">${timestamp.toLocaleString()}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px;"><strong>Recovery Attempt:</strong></td>
-                <td style="padding: 8px;">${attemptNumber} of ${config.maxAttempts}</td>
-              </tr>
-            </table>
+          <div style="background-color: #17a2b8; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0; font-size: 24px;">🔄 PODS Stopped</h1>
           </div>
           
-          <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px;">
-            <strong>⏳ Next Step:</strong> Database will be restarted in ${config.waitAfterStop/1000} seconds
+          <div style="background-color: #f8f9fa; padding: 20px; border-left: 5px solid #17a2b8;">
+            <h2 style="color: #0c5460; margin-top: 0;">Automatic PODS Stop Initiated</h2>
+            
+            <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">              
+              <tr>
+                <td style="padding: 8px; font-weight: bold;">Time:</td>
+                <td style="padding: 8px;">${currentTime.toLocaleString()}</td>
+              </tr>              
+            </table>
+            
+            <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #0c5460;">🔧 RECOVERY PROGRESS</h3>
+              <ol style="color: #0c5460; margin: 10px 0;">
+                <li>✅ Step 1: Stop Pods - Completed</li>                
+                <li><strong>➡️ Step 2: Restart Oracle Database - IN PROGRESS</strong></li>
+                <li>Step 3: Wait for database to come online</li>
+                <li>Step 4: Verify database connection</li>
+                <li>Step 5: Start Pods</li>
+              </ol>
+            </div>
+            
+            <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 15px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #856404;">⏱️ EXPECTED ACTIONS</h3>
+              <ul style="color: #856404; margin: 10px 0;">
+                <li>Database shutdown in progress</li>
+                <li>Database will be restarted automatically</li>
+                <li>This process may take 2-5 minutes</li>
+                <li>Services will remain unavailable during restart</li>
+                <li>You will be notified when recovery completes</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
+            <p style="margin: 0;">This is an automated recovery notification from the Database Auto-Recovery System</p>
+            <p style="margin: 5px 0 0 0;">Please do not attempt manual intervention unless recovery fails</p>
           </div>
         </div>
-        
-        <div style="background-color: #343a40; color: white; padding: 15px; text-align: center; font-size: 12px;">
-          <p style="margin: 0;">Database Auto-Recovery System - Step 1/4 Complete</p>
-        </div>
-      </div>
     `;
     
     await emailService.transporter.sendMail({
