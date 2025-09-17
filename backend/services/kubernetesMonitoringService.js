@@ -657,11 +657,7 @@ async sendBatchStopAlert(stoppedWorkloads, emailGroupId) {
             <!-- Summary Cards -->
             <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
               <h2 style="margin-top: 0; color: #333; border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">📊 Summary</h2>
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 15px;">
-                <div style="text-align: center; padding: 15px; background: #fff5f5; border: 1px solid #f5c2c7; border-radius: 8px;">
-                  <div style="font-size: 32px; font-weight: bold; color: #dc3545;">${stoppedWorkloads.length}</div>
-                  <div style="font-size: 12px; color: #842029; margin-top: 5px; font-weight: 600;">WORKLOADS STOPPED</div>
-                </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 15px;">                
                 <div style="text-align: center; padding: 15px; background: #fff5f5; border: 1px solid #f5c2c7; border-radius: 8px;">
                   <div style="font-size: 32px; font-weight: bold; color: #dc3545;">${totalPods}</div>
                   <div style="font-size: 12px; color: #842029; margin-top: 5px; font-weight: 600;">TOTAL PODS</div>
