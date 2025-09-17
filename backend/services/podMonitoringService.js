@@ -76,27 +76,29 @@ class PodMonitoringService {
       try {
         const allPods = await kubernetesService.getAllPodsWithContainers();
         
-        // Include ALL pods for monitoring (don't filter out unready ones)
+        // FILTER OUT completed pods from monitoring
         currentPods = allPods.filter(pod => {
-          // Only exclude truly completed/succeeded pods
+          // Exclude Completed/Succeeded pods
           if (pod.status === 'Completed' || pod.status === 'Succeeded') {
             return false;
           }
+          
+          // Exclude pods with 0/X ready ratio unless they're actively running/pending
+          if (pod.readinessRatio && pod.readinessRatio.startsWith('0/') && 
+              pod.status !== 'Running' && pod.status !== 'Pending') {
+            return false;
+          }
+          
           return true;
         });
         
-        console.log(`📡 Monitoring ${currentPods.length} active pods (from ${allPods.length} total)`);
-        
-        // Log IFS app pods specifically
-        const ifsAppPods = currentPods.filter(p => p.name.startsWith('ifsapp-'));
-        console.log(`🎯 Tracking ${ifsAppPods.length} IFS app pods in namespace uattest`);
-        
+        console.log(`📡 Current active pods: ${currentPods.length} (filtered from ${allPods.length} total)`);
       } catch (k8sError) {
         console.log('⚠️ Could not fetch current pods from K8s:', k8sError.message);
         return;
       }
       
-      // Update lifecycle tracking and detect changes
+      // CRITICAL FIX: Update lifecycle tracking and detect changes
       const changes = await podLifecycleService.updatePodLifecycle(currentPods);
       
       if (changes.length > 0) {
@@ -104,79 +106,71 @@ class PodMonitoringService {
         
         // Get email configuration
         const kubeConfig = kubernetesConfigService.getConfig();
-        
         if (!kubeConfig.emailGroupId) {
           console.log('⚠️ No email group configured - skipping email alerts');
           return;
         }
-        
-        // Process alerts that require email notification
-        const alertsToSend = changes.filter(c => c.requiresAlert);
-        
-        if (alertsToSend.length > 0) {
-          console.log(`📧 Processing ${alertsToSend.length} alerts requiring email`);
+
+        // ENHANCED: Handle BOTH mass disappearance AND individual pod deletions
+        const disappearanceAlerts = changes.filter(c => c.type === 'mass_disappearance');
+        const individualDeletions = changes.filter(c => 
+          c.type === 'pod_deleted' || 
+          c.type === 'individual_disappearance' ||
+          (c.type === 'pod_disappeared' && c.podCount === 1)
+        );
+
+        // Process mass disappearance alerts (existing logic)
+        if (disappearanceAlerts.length > 0) {
+          console.log(`🛑 Processing ${disappearanceAlerts.length} mass disappearance alerts...`);
           
-          for (const alert of alertsToSend) {
+          for (const alert of disappearanceAlerts) {
             try {
-              let emailSent = false;
-              
-              switch (alert.type) {
-                case 'mass_disappearance':
-                  console.log(`🛑 Mass disappearance: ${alert.namespace} (${alert.podCount} pods)`);
-                  emailSent = await this.sendPodDisappearanceEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                case 'ifsapp_pod_down':
-                  console.log(`🚨 IFS App pod down: ${alert.podName}`);
-                  emailSent = await this.sendIfsAppPodDownEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                case 'ifsapp_service_down':
-                  console.log(`🚨 IFS App service down: ${alert.service} (${alert.podCount} pods)`);
-                  emailSent = await this.sendIfsAppServiceDownEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                case 'ifsapp_pod_failed':
-                  console.log(`❌ IFS App pod failed: ${alert.podName}`);
-                  emailSent = await this.sendIfsAppPodFailedEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                case 'ifsapp_pod_unready':
-                  console.log(`⚠️ IFS App pod unready: ${alert.podName}`);
-                  emailSent = await this.sendIfsAppPodUnreadyEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                case 'ifsapp_pod_restart':
-                  console.log(`🔄 IFS App pod restart: ${alert.podName} (+${alert.increase})`);
-                  emailSent = await this.sendIfsAppPodRestartEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                case 'ifsapp_pod_recovered':
-                  console.log(`✅ IFS App pod recovered: ${alert.podName}`);
-                  emailSent = await this.sendIfsAppPodRecoveredEmail(alert, kubeConfig.emailGroupId);
-                  break;
-                  
-                default:
-                  console.log(`ℹ️ Alert type ${alert.type} - no email handler`);
-              }
-              
-              if (emailSent) {
-                console.log(`✅ Email sent for ${alert.type}`);
-              } else if (alert.requiresAlert) {
-                console.log(`⚠️ Failed to send email for ${alert.type}`);
-              }
-              
+              await this.sendPodDisappearanceEmail(alert, kubeConfig.emailGroupId);
+              console.log(`✅ Mass disappearance email sent for ${alert.namespace} (${alert.podCount} pods)`);
             } catch (emailError) {
-              console.error(`❌ Email error for ${alert.type}:`, emailError.message);
+              console.error(`❌ Failed to send mass disappearance email for ${alert.namespace}:`, emailError.message);
+            }
+          }
+        }
+
+        // NEW: Process individual pod deletions
+        if (individualDeletions.length > 0) {
+          console.log(`🔍 Processing ${individualDeletions.length} individual pod deletion alerts...`);
+          
+          for (const deletion of individualDeletions) {
+            try {
+              // Convert individual deletion to disappearance alert format
+              const individualAlert = {
+                type: 'individual_pod_disappearance',
+                namespace: deletion.namespace || 'unknown',
+                podCount: 1,
+                timestamp: deletion.timestamp || new Date().toISOString(),
+                message: `Individual pod deleted: ${deletion.podName || 'unknown'}`,
+                pods: deletion.pods || [{ 
+                  name: deletion.podName || 'unknown', 
+                  namespace: deletion.namespace || 'unknown', 
+                  status: deletion.previousStatus || 'Unknown' 
+                }],
+                severity: 'info'
+              };
+
+              await this.sendPodDisappearanceEmail(individualAlert, kubeConfig.emailGroupId);
+              console.log(`✅ Individual pod deletion email sent for ${deletion.podName || 'unknown pod'}`);
+            } catch (emailError) {
+              console.error(`❌ Failed to send individual deletion email:`, emailError.message);
             }
           }
         }
         
-        // Log non-alert changes
-        const nonAlertChanges = changes.filter(c => !c.requiresAlert);
-        if (nonAlertChanges.length > 0) {
-          const types = [...new Set(nonAlertChanges.map(c => c.type))];
-          console.log(`📝 Other changes (no alert): ${types.join(', ')}`);
+        // Log other changes for debugging
+        const otherChanges = changes.filter(c => 
+          c.type !== 'mass_disappearance' && 
+          c.type !== 'pod_deleted' && 
+          c.type !== 'individual_disappearance' &&
+          c.type !== 'pod_disappeared'
+        );
+        if (otherChanges.length > 0) {
+          console.log(`📝 Other changes: ${otherChanges.map(c => c.type).join(', ')}`);
         }
       }
       
@@ -195,38 +189,57 @@ class PodMonitoringService {
         return false;
       }
 
-      const { namespace, podCount, pods, timestamp } = disappearanceAlert;
+      const { namespace, podCount, pods, timestamp, type } = disappearanceAlert;
       const alertTime = new Date(timestamp);
+
+      // ENHANCED: Different subject line for single vs mass deletions
+      const isIndividualDeletion = podCount === 1 || type === 'individual_pod_disappearance';
+      const subject = isIndividualDeletion
+        ? `🔍 KUBERNETES ALERT: 1 pod deleted in '${namespace}'`
+        : `🛑 KUBERNETES ALERT: ${podCount} pods stopped in '${namespace}'`;
+
+      // ENHANCED: Different header for single vs mass deletions
+      const headerTitle = isIndividualDeletion
+        ? 'KUBERNETES POD DELETED'
+        : 'KUBERNETES PODS STOPPED';
+
+      const headerColor = isIndividualDeletion ? '#ff9800' : '#ff4d4f'; // Orange for individual, Red for mass
 
       const mailOptions = {
         from: emailService.getEmailConfig().user,
         to: targetGroup.emails.join(','),
-        subject: `🛑 KUBERNETES ALERT: ${podCount} pods stopped in '${namespace}'`,
+        subject: subject,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background-color: #ff4d4f; color: white; padding: 20px; text-align: center;">
-              <h1 style="margin: 0;">🛑 KUBERNETES PODS STOPPED</h1>
+            <div style="background-color: ${headerColor}; color: white; padding: 20px; text-align: center;">
+              <h1 style="margin: 0;">${isIndividualDeletion ? '🔍' : '🛑'} ${headerTitle}</h1>
             </div>
             
-            <div style="padding: 20px; background-color: #fff2f0; border-left: 5px solid #ff4d4f;">
-              <h2 style="color: #ff4d4f; margin-top: 0;">Mass Pod Disappearance Detected</h2>
+            <div style="padding: 20px; background-color: #fff2f0; border-left: 5px solid ${headerColor};">
+              <h2 style="color: ${headerColor}; margin-top: 0;">
+                ${isIndividualDeletion ? 'Individual Pod Deletion Detected' : 'Mass Pod Disappearance Detected'}
+              </h2>
               
               <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
                 <tr>
                   <td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #ddd;">Namespace:</td>
-                  <td style="padding: 8px; color: #ff4d4f; font-weight: bold; border-bottom: 1px solid #ddd;">${namespace}</td>
+                  <td style="padding: 8px; color: ${headerColor}; font-weight: bold; border-bottom: 1px solid #ddd;">${namespace}</td>
                 </tr>
                 <tr style="background-color: #ffffff;">
-                  <td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #ddd;">Pods Stopped:</td>
+                  <td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #ddd;">${isIndividualDeletion ? 'Pod Deleted:' : 'Pods Stopped:'}</td>
                   <td style="padding: 8px; border-bottom: 1px solid #ddd;">${podCount}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #ddd;">Detection Time:</td>
                   <td style="padding: 8px; border-bottom: 1px solid #ddd;">${alertTime.toLocaleString()}</td>
                 </tr>
+                <tr>
+                  <td style="padding: 8px; font-weight: bold;">Alert Severity:</td>
+                  <td style="padding: 8px;">${isIndividualDeletion ? '🔍 Individual Deletion (Info)' : '🛑 Mass Deletion (Warning)'}</td>
+                </tr>
               </table>
               
-              <h3 style="color: #ff4d4f;">Affected Pods:</h3>
+              <h3 style="color: ${headerColor};">Affected Pod${podCount === 1 ? '' : 's'}:</h3>
               <div style="background-color: #ffffff; border: 1px solid #ddd; padding: 10px; margin: 10px 0;">
                 ${pods.slice(0, 10).map(pod => `
                   <div style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;">
@@ -237,27 +250,37 @@ class PodMonitoringService {
                 ${pods.length > 10 ? `<div style="padding: 4px 0; color: #666; font-style: italic;">... and ${pods.length - 10} more pods</div>` : ''}
               </div>
               
-              <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 15px 0; border-radius: 4px;">
-                <h3 style="margin-top: 0; color: #856404;">⚠️ RECOMMENDED ACTIONS</h3>
-                <ul style="color: #856404; margin: 10px 0;">
-                  <li>Check if this was an intentional maintenance operation</li>
-                  <li>Verify Kubernetes cluster status and connectivity</li>
-                  <li>Review deployment and service configurations</li>
-                  <li>Consider restarting services if this was unintentional</li>
+              <div style="background-color: ${isIndividualDeletion ? '#e3f2fd' : '#fff3cd'}; border: 1px solid ${isIndividualDeletion ? '#bbdefb' : '#ffeaa7'}; padding: 15px; margin: 15px 0; border-radius: 4px;">
+                <h3 style="margin-top: 0; color: ${isIndividualDeletion ? '#1976d2' : '#856404'};">
+                  ${isIndividualDeletion ? 'ℹ️ RECOMMENDED ACTIONS' : '⚠️ RECOMMENDED ACTIONS'}
+                </h3>
+                <ul style="color: ${isIndividualDeletion ? '#1976d2' : '#856404'}; margin: 10px 0;">
+                  ${isIndividualDeletion ? `
+                    <li>Check if this was an intentional pod deletion or restart</li>
+                    <li>Verify if the pod is automatically recreating (normal for deployments)</li>
+                    <li>Monitor namespace for any follow-up pod creations</li>
+                    <li>Check deployment/replicaset status if this affects availability</li>
+                  ` : `
+                    <li>Check if this was an intentional maintenance operation</li>
+                    <li>Verify Kubernetes cluster status and connectivity</li>
+                    <li>Review deployment and service configurations</li>
+                    <li>Check for resource constraints or node issues</li>
+                    <li>Consider restarting services if this was unintentional</li>
+                  `}
                 </ul>
               </div>
             </div>
             
             <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
               <p style="margin: 0;">Alert sent to: ${targetGroup.name}</p>
-              <p style="margin: 5px 0 0 0;">Automated Pod Monitoring System</p>
+              <p style="margin: 5px 0 0 0;">Kubernetes Pod Monitoring System</p>
             </div>
           </div>
         `
       };
 
       await emailService.transporter.sendMail(mailOptions);
-      console.log(`📧 ✅ Pod disappearance alert sent successfully to ${targetGroup.emails.length} recipients`);
+      console.log(`📧 ✅ Pod ${isIndividualDeletion ? 'deletion' : 'disappearance'} alert sent successfully to ${targetGroup.emails.length} recipients`);
       return true;
       
     } catch (error) {
