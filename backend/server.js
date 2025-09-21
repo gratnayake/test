@@ -3240,42 +3240,8 @@ app.get('/api/kubernetes/debug/email-config', (req, res) => {
   }
 });
 
-app.get('/api/kubernetes/pod-monitoring/status', (req, res) => {
-  try {
-    const status = podMonitoringService.getStatus();
-    res.json({
-      success: true,
-      status: status
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 
-app.post('/api/kubernetes/pod-monitoring/start', (req, res) => {
-  try {
-    const started = podMonitoringService.startMonitoring();
-    if (started) {
-      res.json({
-        success: true,
-        message: 'Pod monitoring started successfully'
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: 'Failed to start pod monitoring (already running or not configured)'
-      });
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+
 
 app.post('/api/kubernetes/check-pod-recovery', async (req, res) => {
   try {
@@ -3299,27 +3265,7 @@ app.post('/api/kubernetes/check-pod-recovery', async (req, res) => {
   }
 });
 
-app.post('/api/kubernetes/pod-monitoring/stop', (req, res) => {
-  try {
-    const stopped = podMonitoringService.stopMonitoring();
-    if (stopped) {
-      res.json({
-        success: true,
-        message: 'Pod monitoring stopped successfully'
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: 'Pod monitoring was not running'
-      });
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+
 
 
 app.get('/api/kubernetes/pod-recovery/status', (req, res) => {
@@ -3957,26 +3903,8 @@ setTimeout(() => {
   console.log(`✅ Started monitoring ${started} URLs`);
 }, 3000);
 
-setTimeout(() => {
-  const kubernetesConfig = kubernetesConfigService.getConfig();
-  if (kubernetesConfig.isConfigured && kubernetesConfig.emailGroupId) {
-    console.log('🔍 Starting pod recovery notifier...');
-    podRecoveryNotifier.startWatching();
-    console.log('✅ Pod recovery notifier started - watching last-known-pods.json');
-  } else {
-    console.log('⚠️ Pod recovery notifier not started - Kubernetes not configured or no email group set');
-  }
-}, 5000);
 
-setTimeout(async () => {
-  const config = kubernetesConfigService.getConfig();
-  if (config.isConfigured && config.thresholds?.monitoringEnabled) {
-    console.log('🚀 Auto-starting Kubernetes monitoring...');
-    const monitoringService = require('./services/kubernetesMonitoringService');
-    monitoringService.startMonitoring();
-  }
-}, 5000)
-// Auto-start monitoring if database is configured
+
 setTimeout(() => {
   const config = dbConfigService.getConfig();
   if (config.isConfigured) {
