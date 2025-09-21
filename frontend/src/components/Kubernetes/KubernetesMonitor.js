@@ -856,40 +856,45 @@ const EnhancedKubernetesMonitor = () => {
       {/* Enhanced Pod Table */}
       <Card title={`Pod Lifecycle Monitor (${pods.length} pods)`}>
         <Table
-          columns={enhancedColumns}
-          dataSource={pods}
-          rowKey="key"
-          loading={loading}
-          expandable={{
-            expandedRowKeys: expandedGroups,
-            onExpand: (expanded, record) => {
-              if (record.isGroup) {
-                setExpandedGroups(prev => 
-                  expanded 
-                    ? [...prev, record.key]
-                    : prev.filter(key => key !== record.key)
-                );
-              }
-            },
-            expandRowByClick: true,
-            childrenColumnName: 'children',
-            indentSize: 0,
-            rowExpandable: record => record.isGroup && record.children && record.children.length > 0
-          }}
-          pagination={{
-            pageSize: 20,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => 
-              `${range[0]}-${range[1]} of ${total} items`,
-          }}
-          rowClassName={(record) => {
-            if (record.isGroup && record.hasIssues) return 'degraded-group-row';
-            if (record.isGroup) return 'group-row';
-            return '';
-          }}
-          scroll={{ x: 1200 }}
-        />
+  columns={enhancedColumns}  // ✅ Now with sorting enabled
+  dataSource={pods}
+  rowKey="key"
+  loading={loading}
+  
+  // OPTIONAL: Add default sorting
+  defaultSortOrder="descend"
+  
+  // Your existing table props:
+  expandable={{
+    expandedRowKeys: expandedGroups,
+    onExpand: (expanded, record) => {
+      if (record.isGroup) {
+        setExpandedGroups(prev => 
+          expanded 
+            ? [...prev, record.key]
+            : prev.filter(key => key !== record.key)
+        );
+      }
+    },
+    expandRowByClick: true,
+    childrenColumnName: 'children',
+    indentSize: 0,
+    rowExpandable: record => record.isGroup && record.children && record.children.length > 0
+  }}
+  pagination={{
+    pageSize: 20,
+    showSizeChanger: true,
+    showQuickJumper: true,
+    showTotal: (total, range) => 
+      `${range[0]}-${range[1]} of ${total} items`,
+  }}
+  rowClassName={(record) => {
+    if (record.isGroup && record.hasIssues) return 'degraded-group-row';
+    if (record.isGroup) return 'group-row';
+    return '';
+  }}
+  scroll={{ x: 1200 }}
+/>
       </Card>
 
       {/* Pod History Modal */}
