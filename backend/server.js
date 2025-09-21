@@ -3815,6 +3815,52 @@ app.get('/api/master-alerts/compare-systems', (req, res) => {
   }
 });
 
+app.get('/api/kubernetes/debug/snapshot-info', (req, res) => {
+  try {
+    const podLifecycleService = require('./services/podLifecycleService');
+    const snapshot = podLifecycleService.getCurrentSnapshot();
+    
+    if (!snapshot) {
+      return res.json({
+        success: false,
+        message: 'No snapshot found'
+      });
+    }
+    
+    // Show summary of snapshot
+    const summary = {
+      snapshotTimestamp: snapshot.timestamp,
+      totalScanned: snapshot.totalPodsScanned,
+      includedInSnapshot: snapshot.fullyReadyPodsIncluded,
+      excludedUnready: snapshot.excludedUnreadyPods,
+      namespaceCounts: {},
+      exampleIncludedPods: snapshot.pods.slice(0, 5).map(p => ({
+        name: p.name,
+        namespace: p.namespace,
+        ready: `${p.readyContainers}/${p.totalContainers}`,
+        status: p.status
+      }))
+    };
+    
+    // Count pods per namespace
+    snapshot.pods.forEach(pod => {
+      summary.namespaceCounts[pod.namespace] = (summary.namespaceCounts[pod.namespace] || 0) + 1;
+    });
+    
+    res.json({
+      success: true,
+      snapshot: summary,
+      message: `Snapshot contains ${snapshot.pods.length} fully ready pods, excluded ${snapshot.excludedUnreadyPods} unready pods`
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 function initializePodAlertSystem() {
   console.log('🎯 Initializing Production Pod Alert System...');
   
@@ -3865,29 +3911,50 @@ app.use((req, res) => {
 
 setTimeout(async () => {
   try {
-    const kubeConfig = kubernetesConfigService.getConfig();
+    const kubernetesConfig = kubernetesConfigService.getConfig();
     
-    if (kubeConfig.isConfigured) {
-      console.log('🚀 Initializing Kubernetes pod snapshot...');
+    if (kubernetesConfig.isConfigured) {
+      console.log('📸 Initializing pod snapshot for monitoring...');
       
-      // Get all current pods WITH CONTAINER INFO
-      let pods = [];
-      try {
-        // Use the method that includes container details
-        pods = await kubernetesService.getAllPodsWithContainers();
-      } catch (error) {
-        console.log('⚠️ Failed to get pods with containers, trying basic method...');
-        pods = await kubernetesService.getAllPods();
+      // Get ALL pods (including unready ones)
+      const allPods = await kubernetesService.getAllPods();
+      console.log(`📊 Found ${allPods.length} total pods in cluster`);
+      
+      // Show breakdown of pod readiness BEFORE filtering
+      const fullyReadyCount = allPods.filter(pod => {
+        const readyContainers = pod.readyContainers || 0;
+        const totalContainers = pod.totalContainers || 1;
+        return readyContainers === totalContainers;
+      }).length;
+      
+      const unreadyCount = allPods.length - fullyReadyCount;
+      
+      console.log(`📋 Pod breakdown: ${fullyReadyCount} fully ready, ${unreadyCount} unready`);
+      
+      // Log examples of unready pods that WILL BE EXCLUDED
+      const unreadyPods = allPods.filter(pod => {
+        const readyContainers = pod.readyContainers || 0;
+        const totalContainers = pod.totalContainers || 1;
+        return readyContainers < totalContainers;
+      });
+      
+      if (unreadyPods.length > 0) {
+        console.log(`❌ UNREADY PODS (will be excluded from snapshot):`);
+        unreadyPods.slice(0, 5).forEach(pod => {
+          console.log(`   ${pod.namespace}/${pod.name}: ${pod.readyContainers || 0}/${pod.totalContainers || 1} (${pod.status})`);
+        });
+        if (unreadyPods.length > 5) {
+          console.log(`   ... and ${unreadyPods.length - 5} more unready pods`);
+        }
       }
       
-      console.log(`📊 Found ${pods.length} total pods in cluster`);
-      
-      // Take initial snapshot (will exclude unready pods)
-      const snapshot = await podLifecycleService.takeInitialSnapshot(pods);
+      // Take initial snapshot (this will automatically exclude unready pods)
+      const snapshot = await podLifecycleService.takeInitialSnapshot(allPods);
       
       console.log('✅ Pod snapshot initialized successfully');
       console.log(`📸 Snapshot contains ${snapshot.pods.length} fully ready pods`);
       console.log(`⚠️ Excluded ${snapshot.excludedUnreadyPods} pods with unready containers`);
+      console.log(`🎯 Email alerts will ONLY be sent for the ${snapshot.pods.length} pods in snapshot`);
       
     } else {
       console.log('⚠️ Kubernetes not configured - skipping pod snapshot');
