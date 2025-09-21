@@ -1,53 +1,55 @@
 const alertConfig = {
-  // Alert timing configuration
-  timing: {
-    immediate: 0,           // Critical alerts (mass pod loss)
-    quick: 5000,           // Recovery alerts (5 seconds)
-    batched: 30000,        // Individual changes (30 seconds)
-    heartbeat: 60000       // System health checks (1 minute)
+  system: {
+    migrationMode: 'production',    // Production mode - new system only
+    autoStart: true,                // Auto-start new system
+    useNewSystemOnly: true,         // Disable old systems
+    cleanCutover: true             // Complete replacement
   },
 
-  // Alert classification rules
+  // Optimized timing for production
+  timing: {
+    immediate: 0,           // Critical alerts send immediately
+    quick: 3000,           // Recovery alerts (3 seconds)
+    batched: 15000,        // Individual changes (15 seconds - faster than old)
+    heartbeat: 60000       // System health checks
+  },
+
+  // Production-ready classification
   classification: {
-    // Mass disappearance threshold
-    massDisappearanceThreshold: 3,  // 3+ pods = mass event
+    massDisappearanceThreshold: 2,  // Lower threshold (2+ pods = mass event)
     
-    // Individual pod alert settings
     singlePodAlerts: {
-      enabled: true,                 // Enable single pod alerts
-      excludeCompleted: true,        // Ignore completed/succeeded pods
-      excludeJobPods: true          // Ignore job pods
+      enabled: true,              // Enable individual pod alerts
+      excludeCompleted: true,     // Ignore completed/succeeded pods
+      excludeJobPods: true       // Ignore job pods
     },
 
-    // Recovery detection
     recovery: {
       enabled: true,
-      minRecoveryTime: 30000,       // Wait 30s before declaring recovery
-      trackDowntime: true           // Track how long pods were down
+      minRecoveryTime: 10000,    // 10 seconds before declaring recovery
+      trackDowntime: true        // Track downtime duration
     },
 
-    // Restart alerts
     restarts: {
       enabled: true,
-      threshold: 1,                 // Alert on any restart
-      cooldown: 300000             // 5 minute cooldown per pod
+      threshold: 1,              // Alert on any restart
+      cooldown: 180000          // 3 minute cooldown per pod (reduced)
     }
   },
 
-  // Email template settings
+  // Production email settings
   templates: {
-    useUnifiedDesign: true,         // Use consistent design for all emails
-    includeDiagnostics: true,       // Include troubleshooting info
-    showClusterOverview: true,      // Show overall cluster health
-    maxPodsInEmail: 10             // Limit pod list in emails
+    useUnifiedDesign: true,
+    includeDiagnostics: true,
+    showClusterOverview: true,
+    maxPodsInEmail: 15         // Show more pods in production emails
   },
 
-  // Advanced features
   features: {
-    smartBatching: true,            // Group related alerts intelligently
-    contextualAlerts: true,         // Include deployment/namespace context
-    escalation: false,              // Future: escalate unack'd alerts
-    maintenanceMode: false          // Future: suppress alerts during maintenance
+    smartBatching: true,
+    contextualAlerts: true,
+    escalation: false,         // Can enable later
+    maintenanceMode: false     // Can enable for planned maintenance
   }
 };
 

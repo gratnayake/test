@@ -21,6 +21,8 @@ const podMonitoringService = require('./services/podMonitoringService');
 const podRecoveryNotifier = require('./services/podRecoveryNotifier');
 const autoRecoveryRoutes = require('./routes/autoRecovery');
 const masterPodAlertService = require('./services/masterPodAlertService');
+const alertConfig = require('./config/alertConfig');
+
 
 
 
@@ -3867,7 +3869,35 @@ app.get('/api/master-alerts/compare-systems', (req, res) => {
   }
 });
 
+function initializePodAlertSystem() {
+  console.log('🎯 Initializing Production Pod Alert System...');
+  
+  if (alertConfig.system.migrationMode === 'production') {
+    console.log('✅ Using NEW unified alert system only');
+    
+    // Auto-start the new system
+    setTimeout(() => {
+      const started = masterPodAlertService.startMonitoring();
+      if (started) {
+        console.log('🚀 Master Pod Alert Service started successfully');
+        console.log(`📊 Monitoring configuration:`);
+        console.log(`   - Individual pod alerts: ${alertConfig.classification.singlePodAlerts.enabled ? 'ENABLED' : 'DISABLED'}`);
+        console.log(`   - Mass failure threshold: ${alertConfig.classification.massDisappearanceThreshold} pods`);
+        console.log(`   - Alert timing: Immediate/3s/15s`);
+        console.log(`   - Email design: Unified templates`);
+      } else {
+        console.error('❌ Failed to start Master Pod Alert Service');
+      }
+    }, 3000); // Start after 3 seconds
+    
+  } else {
+    console.log('⚠️ Alert system not in production mode');
+  }
+}
 
+// Call this function after your existing service initializations:
+// (Add this before app.listen)
+initializePodAlertSystem();
 
 // Error handling middleware
 app.use((err, req, res, next) => {
