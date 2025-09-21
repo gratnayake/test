@@ -3922,6 +3922,24 @@ setTimeout(() => {
 
 
 
+setTimeout(async () => {
+  try {
+    console.log('🚀 Auto-starting Master Alert Service...');
+    
+    const response = await fetch('http://localhost:5001/api/master-alerts/start', {
+      method: 'POST'
+    });
+    
+    if (response.ok) {
+      console.log('✅ Master Alert Service started automatically');
+    } else {
+      console.log('❌ Failed to start Master Alert Service');
+    }
+  } catch (error) {
+    console.error('❌ Error auto-starting Master Alert Service:', error.message);
+  }
+}, 3000);
+
 setInterval(async () => {
   try {
     await podRecoveryNotifier.checkAndNotifyRecovery();
