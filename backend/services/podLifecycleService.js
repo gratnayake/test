@@ -29,11 +29,11 @@ class PodLifecycleService {
       const readyContainers = pod.readyContainers || 0;
       const totalContainers = pod.totalContainers || 1;
       
-      // Only include pods where ALL containers are ready (1/1, 2/2, 3/3, etc.)
-      const isFullyReady = readyContainers === totalContainers && totalContainers > 0;
+      // Only include pods where ALL containers are ready
+      const isFullyReady = readyContainers === totalContainers;
       
       if (!isFullyReady) {
-        console.log(`⚠️ Excluding pod ${pod.namespace}/${pod.name} from snapshot (${readyContainers}/${totalContainers} ready, status: ${pod.status})`);
+        console.log(`⚠️ Excluding pod ${pod.namespace}/${pod.name} from snapshot (${readyContainers}/${totalContainers} ready)`);
       }
       
       return isFullyReady;
@@ -61,14 +61,11 @@ class PodLifecycleService {
     };
     
     // Save snapshot to file
-    const fs = require('fs');
     fs.writeFileSync(this.snapshotFile, JSON.stringify(snapshot, null, 2));
     this.initialSnapshot = snapshot;
     this.isInitialized = true;
     
-    console.log(`✅ Initial snapshot taken with ${snapshot.pods.length} fully ready pods`);
-    console.log(`🚫 Excluded ${snapshot.excludedUnreadyPods} unready pods from monitoring`);
-    
+    console.log(`✅ Initial snapshot taken with ${snapshot.pods.length} fully ready pods (excluded ${snapshot.excludedUnreadyPods} unready pods)`);
     return snapshot;
   }
 
