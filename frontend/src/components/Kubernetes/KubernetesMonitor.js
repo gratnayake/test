@@ -676,20 +676,7 @@ const EnhancedKubernetesMonitor = () => {
               size="small"
               onClick={() => setHistoryModal({ visible: true, pod: record })}
             />
-          </Tooltip>
-          
-          <Dropdown
-            overlay={
-              <PodActions
-                pod={record}
-                onRefresh={loadEnhancedPods}
-                onScale={(pod) => handleScale(pod)}
-              />
-            }
-            trigger={['click']}
-          >
-            <Button icon={<MoreOutlined />} size="small" />
-          </Dropdown>
+          </Tooltip>    
         </Space>
       );
     }
