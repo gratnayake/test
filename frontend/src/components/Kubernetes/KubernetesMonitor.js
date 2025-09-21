@@ -995,46 +995,7 @@ const EnhancedKubernetesMonitor = () => {
       </Modal>
 
       {/* Scale Deployment Modal */}
-      <Modal
-        title={
-          <Space>
-            <ScissorOutlined />
-            Scale Deployment
-          </Space>
-        }
-        open={scaleModalVisible}
-        onCancel={() => setScaleModalVisible(false)}
-        onOk={handleScaleDeployment}
-        confirmLoading={actionLoading}
-        okText="Scale"
-      >
-        {selectedPod && (
-          <Space direction="vertical" style={{ width: '100%' }} size="large">
-            <div>
-              <p><strong>Pod:</strong> {selectedPod.name}</p>
-              <p><strong>Namespace:</strong> {selectedPod.namespace}</p>
-              <p><strong>Deployment:</strong> {getDeploymentName(selectedPod.name)}</p>
-              {deploymentInfo && (
-                <p><strong>Current Replicas:</strong> {deploymentInfo.currentReplicas}</p>
-              )}
-            </div>
-
-            <div>
-              <p><strong>New Replica Count:</strong></p>
-              <InputNumber
-                min={0}
-                max={20}
-                value={newReplicaCount}
-                onChange={setNewReplicaCount}
-                style={{ width: '100%' }}
-              />
-              <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-                Set to 0 to stop all pods, or increase to scale up
-              </p>
-            </div>
-          </Space>
-        )}
-      </Modal>
+      
 
       {/* Custom CSS */}
       <style>{`
