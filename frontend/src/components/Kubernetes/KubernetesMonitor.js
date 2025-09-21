@@ -683,7 +683,7 @@ const EnhancedKubernetesMonitor = () => {
               <PodActions
                 pod={record}
                 onRefresh={loadEnhancedPods}
-                onScale={(pod) => handleScale(pod)}
+                onScale={(pod) => handleScaleDeployment(pod)}
               />
             }
             trigger={['click']}
