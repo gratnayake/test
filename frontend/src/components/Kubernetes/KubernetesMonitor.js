@@ -400,262 +400,301 @@ const EnhancedKubernetesMonitor = () => {
   };
 
   const enhancedColumns = [
-    {
-      title: 'ReplicaSet/Pod',
-      key: 'details',
-      width: 400,
-      render: (_, record) => {
-        // Group/ReplicaSet row
-        if (record.isGroup) {
-          const shouldHighlight = record.hasIssues;
-          
-          return (
-            <Space direction="vertical" size="small">
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <Text strong style={{ 
-                  fontSize: '14px',
-                  color: shouldHighlight ? '#ff4d4f' : 'inherit'
-                }}>
-                  📦 {record.replicaSet}
-                </Text>
-                {shouldHighlight && (
-                  <ExclamationCircleOutlined 
-                    style={{ color: '#ff4d4f', marginLeft: 8 }} 
-                    title={`Expected ${record.originalCount} pods, found ${record.currentCount}`}
-                  />
-                )}
-              </div>
-              <Space>
-                <Text type="secondary" style={{ fontSize: '11px' }}>
-                  Deployment: {record.deployment}
-                </Text>
-                <Text type="secondary" style={{ fontSize: '11px' }}>
-                  | Namespace: {record.namespace}
-                </Text>
-              </Space>
-            </Space>
-          );
-        }
-        
-        // Individual pod row
-        const podStyle = record.isChild ? { paddingLeft: '30px' } : {};
-        
+  {
+    title: 'Pod Name',
+    dataIndex: 'name',
+    key: 'name',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      return a.name.localeCompare(b.name);
+    },
+    sortDirections: ['ascend', 'descend'],
+    width: 300,
+    ellipsis: true,
+    render: (text, record) => {
+      // Your existing render logic stays the same
+      if (record.isGroup) {
         return (
-          <Space direction="vertical" size="small" style={podStyle}>
-            <div>
-              <Text strong style={{ 
-                fontSize: record.isChild ? '12px' : '13px'
-              }}>
-                {record.isChild ? '└─ ' : ''}{record.name}
-              </Text>
-            </div>
-            {!record.isGroup && (
-              <Text type="secondary" style={{ fontSize: '11px' }}>
-                {record.namespace}
-              </Text>
-            )}
+          <Space>
+            <Text strong style={{ color: record.hasIssues ? '#ff4d4f' : '#1890ff' }}>
+              📦 {record.replicaSet}
+            </Text>
+            {record.hasIssues && <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
           </Space>
         );
-      },
+      }
+      
+      return (
+        <Space>
+          <Text style={{ fontFamily: 'monospace' }}>{text}</Text>
+          {record.isNew && <Tag color="green" size="small">NEW</Tag>}
+          {record.isDeleted && <Tag color="red" size="small">DELETED</Tag>}
+        </Space>
+      );
+    }
+  },
+  {
+    title: 'Namespace',
+    dataIndex: 'namespace',
+    key: 'namespace',
+    // ADD SORTING:
+    sorter: (a, b) => a.namespace.localeCompare(b.namespace),
+    sortDirections: ['ascend', 'descend'],
+    width: 120,
+    render: (text, record) => {
+      if (record.isGroup) return null;
+      return <Tag color="blue">{text}</Tag>;
+    }
+  },
+  {
+    title: 'Status',
+    dataIndex: 'status',
+    key: 'status',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      
+      // Define status priority for sorting
+      const statusPriority = {
+        'Running': 1,
+        'Pending': 2,
+        'Failed': 3,
+        'Succeeded': 4,
+        'Deleted': 5,
+        'Unknown': 6
+      };
+      
+      const priorityA = statusPriority[a.status] || 6;
+      const priorityB = statusPriority[b.status] || 6;
+      
+      return priorityA - priorityB;
     },
-    {
-      title: 'Pod Status',
-      key: 'status',
-      width: 200,
-      render: (_, record) => {
-        // Group status - show pod count
-        if (record.isGroup) {
-          const isHealthy = !record.hasIssues;
-          const statusText = record.allPodsGone ? 
-            `0/${record.originalCount} pods` :
-            `${record.currentCount}/${record.originalCount} pods`;
-          
-          return (
-            <Space direction="vertical" size="small">
-              <div>
-                <Badge 
-                  count={statusText}
-                  style={{ 
-                    backgroundColor: isHealthy ? '#52c41a' : '#ff4d4f',
-                    fontSize: '12px'
-                  }}
-                />
-              </div>
-              {record.missingCount > 0 && (
-                <Text type="danger" style={{ fontSize: '11px' }}>
-                  {record.missingCount} pod{record.missingCount > 1 ? 's' : ''} missing
-                </Text>
-              )}
-            </Space>
-          );
-        }
-        
-        // Individual pod status
+    sortDirections: ['ascend', 'descend'],
+    width: 120,
+    render: (status, record) => {
+      // Your existing render logic stays the same
+      if (record.isGroup) {
         return (
-          <Tag color={getStatusColor(record.status, false)}>
-            {record.status}
-          </Tag>
+          <Space>
+            <Text>{record.currentCount}/{record.originalCount}</Text>
+            {record.hasIssues && <Badge status="error" />}
+          </Space>
         );
-      },
+      }
+      
+      return (
+        <Tag color={getStatusColor(status, record.isDeleted)}>
+          {record.isDeleted ? 'DELETED' : status}
+        </Tag>
+      );
+    }
+  },
+  {
+    title: 'Ready',
+    dataIndex: 'readyContainers',
+    key: 'ready',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      
+      // For pods, sort by ready ratio
+      const ratioA = a.totalContainers > 0 ? a.readyContainers / a.totalContainers : 0;
+      const ratioB = b.totalContainers > 0 ? b.readyContainers / b.totalContainers : 0;
+      
+      return ratioA - ratioB;
     },
-    {
-      title: 'Containers Ready',
-      key: 'ready',
-      width: 180,
-      render: (_, record) => {
-        // Group ready status - show container totals
-        if (record.isGroup) {
-          if (record.allPodsGone) {
-            return (
-              <Badge 
-                count="All pods missing"
-                style={{ 
-                  backgroundColor: '#ff4d4f',
-                  fontSize: '12px'
-                }}
-              />
-            );
-          }
-          
-          const allReady = record.totalContainersReady === record.totalContainersExpected;
-          const containerText = `${record.totalContainersReady}/${record.totalContainersExpected}`;
-          
-          return (
-            <Space direction="vertical" size="small">
-              <Badge 
-                count={containerText}
-                style={{ 
-                  backgroundColor: allReady ? '#52c41a' : '#ff4d4f',
-                  fontSize: '12px'
-                }}
-              />
-              {!allReady && record.totalContainersExpected > 0 && (
-                <Text type="danger" style={{ fontSize: '11px' }}>
-                  ⚠️ Not all containers ready
-                </Text>
-              )}
-            </Space>
-          );
-        }
-        
-        // Individual pod ready status
-        const readyCount = record.readyContainers || 0;
-        const totalCount = record.totalContainers || 1;
-        const isFullyReady = readyCount === totalCount;
-        
-        return (
-          <Tooltip title={`${readyCount} of ${totalCount} containers ready`}>
-            <Tag 
-              color={isFullyReady ? 'success' : 'error'}
-              style={{ 
-                minWidth: '50px', 
-                textAlign: 'center'
-              }}
-            >
-              {readyCount}/{totalCount}
-            </Tag>
-          </Tooltip>
-        );
-      },
+    sortDirections: ['ascend', 'descend'],
+    width: 80,
+    render: (readyContainers, record) => {
+      if (record.isGroup) {
+        return <Text>{record.readyPods}/{record.currentCount}</Text>;
+      }
+      
+      const isFullyReady = readyContainers === record.totalContainers;
+      return (
+        <Text style={{ 
+          color: isFullyReady ? '#52c41a' : '#faad14',
+          fontWeight: isFullyReady ? 'normal' : 'bold'
+        }}>
+          {readyContainers}/{record.totalContainers}
+        </Text>
+      );
+    }
+  },
+  {
+    title: 'Restarts',
+    dataIndex: 'restarts',
+    key: 'restarts',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      
+      return (a.restarts || 0) - (b.restarts || 0);
     },
-    {
-      title: 'Restarts',
-      key: 'restarts',
-      width: 100,
-      render: (_, record) => {
-        if (record.isGroup) {
-          // Sum of all restarts in the group
-          const totalRestarts = record.children.reduce((sum, pod) => sum + (pod.restarts || 0), 0);
+    sortDirections: ['ascend', 'descend'],
+    width: 80,
+    render: (restarts, record) => {
+      if (record.isGroup) return null;
+      
+      const color = restarts > 5 ? '#ff4d4f' : restarts > 0 ? '#faad14' : '#52c41a';
+      return <Text style={{ color, fontWeight: restarts > 0 ? 'bold' : 'normal' }}>{restarts || 0}</Text>;
+    }
+  },
+  {
+    title: 'Age',
+    dataIndex: 'age',
+    key: 'age',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      
+      // Convert age strings to seconds for proper sorting
+      const parseAge = (ageStr) => {
+        if (!ageStr) return 0;
+        
+        const parts = ageStr.match(/(\d+)([dhms])/g);
+        if (!parts) return 0;
+        
+        let totalSeconds = 0;
+        parts.forEach(part => {
+          const match = part.match(/(\d+)([dhms])/);
+          if (match) {
+            const value = parseInt(match[1]);
+            const unit = match[2];
             
-          if (totalRestarts > 0) {
-            return (
-              <Badge 
-                count={totalRestarts} 
-                style={{ backgroundColor: '#52c41a' }}
-                title={`Total restarts across all pods`}
-              />
-            );
+            switch (unit) {
+              case 'd': totalSeconds += value * 24 * 60 * 60; break;
+              case 'h': totalSeconds += value * 60 * 60; break;
+              case 'm': totalSeconds += value * 60; break;
+              case 's': totalSeconds += value; break;
+            }
           }
-          return <Text type="secondary">0</Text>;
-        }
+        });
         
-        // Individual pod restarts
-        return record.restarts > 0 ? (
-          <Badge count={record.restarts} style={{ backgroundColor: '#52c41a' }} />
-        ) : (
-          <Text type="secondary">0</Text>
-        );
-      },
+        return totalSeconds;
+      };
+      
+      return parseAge(a.age) - parseAge(b.age);
     },
-    {
-      title: 'Age',
-      key: 'age',
-      width: 100,
-      render: (_, record) => {
-        if (record.isGroup) {
-          // Show age of oldest pod
-          const ages = record.children.map(p => p.age || '').filter(a => a);
-          if (ages.length > 0) {
-            return <Text style={{ fontSize: '12px' }}>{ages[0]}</Text>;
-          }
-          return <Text type="secondary">-</Text>;
-        }
-        return <Text style={{ fontSize: '12px' }}>{record.age || '-'}</Text>;
-      },
+    sortDirections: ['ascend', 'descend'],
+    width: 100,
+    render: (age, record) => {
+      if (record.isGroup) return null;
+      return <Text style={{ fontSize: '12px' }}>{age}</Text>;
+    }
+  },
+  {
+    title: 'Node',
+    dataIndex: 'node',
+    key: 'node',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      
+      return (a.node || '').localeCompare(b.node || '');
     },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 200,
-      render: (_, record) => {
-        // Group actions
-        if (record.isGroup) {
-          const hasActivePods = record.currentCount > 0;
+    sortDirections: ['ascend', 'descend'],
+    width: 150,
+    ellipsis: true,
+    render: (node, record) => {
+      if (record.isGroup) return null;
+      return node ? <Text style={{ fontSize: '12px' }}>{node}</Text> : <Text type="secondary">-</Text>;
+    }
+  },
+  {
+    title: 'Last Seen',
+    dataIndex: 'lastSeen',
+    key: 'lastSeen',
+    // ADD SORTING:
+    sorter: (a, b) => {
+      if (a.isGroup && !b.isGroup) return -1;
+      if (!a.isGroup && b.isGroup) return 1;
+      
+      // Convert date strings to timestamps for proper sorting
+      const dateA = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+      const dateB = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+      
+      return dateB - dateA; // Most recent first
+    },
+    sortDirections: ['ascend', 'descend'],
+    defaultSortOrder: 'descend', // Default to newest first
+    width: 120,
+    render: (lastSeen, record) => {
+      if (record.isGroup) return null;
+      
+      if (!lastSeen) return <Text type="secondary">-</Text>;
+      
+      const date = new Date(lastSeen);
+      const now = new Date();
+      const diffMinutes = Math.floor((now - date) / (1000 * 60));
+      
+      let timeText = '';
+      let color = '#52c41a';
+      
+      if (diffMinutes < 1) {
+        timeText = 'Just now';
+        color = '#52c41a';
+      } else if (diffMinutes < 60) {
+        timeText = `${diffMinutes}m ago`;
+        color = diffMinutes > 10 ? '#faad14' : '#52c41a';
+      } else if (diffMinutes < 1440) {
+        timeText = `${Math.floor(diffMinutes / 60)}h ago`;
+        color = '#faad14';
+      } else {
+        timeText = `${Math.floor(diffMinutes / 1440)}d ago`;
+        color = '#ff4d4f';
+      }
+      
+      return (
+        <Tooltip title={date.toLocaleString()}>
+          <Text style={{ color, fontSize: '12px' }}>
+            {timeText}
+          </Text>
+        </Tooltip>
+      );
+    }
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    width: 100,
+    render: (_, record) => {
+      if (record.isGroup) return null;
+      
+      return (
+        <Space size="small">
+          <Tooltip title="Pod History">
+            <Button
+              icon={<HistoryOutlined />}
+              size="small"
+              onClick={() => setHistoryModal({ visible: true, pod: record })}
+            />
+          </Tooltip>
           
-          return (
-            <Space>
-              {hasActivePods && (
-                <Popconfirm
-                  title="Stop All Pods?"
-                  description={`This will stop all ${record.currentCount} active pods in ${record.replicaSet}`}
-                  onConfirm={async () => {
-                    message.loading(`Stopping all pods in ${record.replicaSet}...`, 0);
-                    for (const pod of record.children) {
-                      await handleRestartPod(pod);
-                    }
-                    message.destroy();
-                    message.success(`Stopped all pods in ${record.replicaSet}`);
-                    setTimeout(loadEnhancedPods, 2000);
-                  }}
-                  okText="Yes, Stop All"
-                  cancelText="Cancel"
-                  okButtonProps={{ danger: true }}
-                >
-                  <Button
-                    size="small"
-                    danger
-                    icon={<PoweroffOutlined />}
-                  >
-                    Stop All
-                  </Button>
-                </Popconfirm>
-              )}
-              {record.missingCount > 0 && (
-                <Tooltip title={`${record.missingCount} pods are missing`}>
-                  <Tag color="red">
-                    {record.missingCount} Missing
-                  </Tag>
-                </Tooltip>
-              )}
-            </Space>
-          );
-        }
-        
-        // Individual pod actions
-        return <PodActions pod={record} onPodAction={() => setTimeout(loadEnhancedPods, 2000)} />;
-      },
-    },
-  ];
+          <Dropdown
+            overlay={
+              <PodActions
+                pod={record}
+                onRefresh={loadEnhancedPods}
+                onScale={(pod) => handleScale(pod)}
+              />
+            }
+            trigger={['click']}
+          >
+            <Button icon={<MoreOutlined />} size="small" />
+          </Dropdown>
+        </Space>
+      );
+    }
+  }
+];
 
   return (
     <div style={{ padding: '24px' }}>
