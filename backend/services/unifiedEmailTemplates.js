@@ -160,6 +160,35 @@ class UnifiedEmailTemplates {
   `;
 }
 
+generatePodList(pods, namespace, theme) {
+    if (!pods || pods.length === 0) return '';
+    
+    return `
+      <div style="margin: 15px 0;">
+        <h4 style="color: ${theme.primary}; margin-bottom: 10px;">Affected Pods:</h4>
+        
+        <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px;">
+          ${pods.slice(0, 10).map((pod, index) => `
+            <div style="padding: 6px 0; border-bottom: ${index < Math.min(pods.length, 10) - 1 ? '1px solid #e9ecef' : 'none'};">
+              <div style="font-weight: bold; color: ${theme.primary};">${pod.name || 'Unknown Pod'}</div>
+              <div style="font-size: 12px; color: #666; margin-top: 2px;">
+                ${pod.status ? `Status: ${pod.status}` : ''}
+                ${pod.restarts !== undefined ? ` | Restarts: ${pod.restarts}` : ''}
+                ${pod.ready !== undefined ? ` | Ready: ${pod.ready ? '✅' : '❌'}` : ''}
+                ${pod.namespace ? ` | Namespace: ${pod.namespace}` : ''}
+              </div>
+            </div>
+          `).join('')}
+          ${pods.length > 10 ? `
+            <div style="padding: 6px 0; color: #666; font-style: italic; text-align: center;">
+              ... and ${pods.length - 10} more pods
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
 generateClusterOverview(clusterOverview, theme) {
   if (!clusterOverview) return '';
   
@@ -200,6 +229,108 @@ generateClusterOverview(clusterOverview, theme) {
   `;
 }
 
+generateIndividualPodAlert(pod, namespace, targetGroup, timestamp = new Date()) {
+    return this.generatePodAlert({
+      alertType: 'warning',
+      title: 'KUBERNETES POD DELETED',
+      subtitle: `Individual pod '${pod.name}' was deleted in '${namespace}'`,
+      classification: {
+        category: 'individual_change',
+        description: `Pod deletion in ${namespace}`
+      },
+      events: [{
+        type: 'pod_deleted',
+        namespace: namespace,
+        podCount: 1,
+        pods: [pod],
+        timestamp: timestamp.toISOString(),
+        message: `Pod deleted: ${pod.name}`,
+        classification: {
+          category: 'individual_change',
+          description: `Individual pod deletion`
+        }
+      }],
+      summary: {
+        totalChanges: 1,
+        massEvents: 0,
+        individualEvents: 1,
+        recoveryEvents: 0
+      },
+      targetGroup: targetGroup,
+      timestamp: timestamp
+    });
+  }
+
+  /**
+   * Convenience method for mass failure alerts
+   */
+  generateMassFailureAlert(pods, namespace, targetGroup, timestamp = new Date()) {
+    return this.generatePodAlert({
+      alertType: 'critical',
+      title: 'KUBERNETES MASS POD FAILURE',
+      subtitle: `${pods.length} pods failed in '${namespace}' - CRITICAL EVENT`,
+      classification: {
+        category: 'mass_disappearance',
+        description: `Mass pod failure in ${namespace}`
+      },
+      events: [{
+        type: 'mass_disappearance',
+        namespace: namespace,
+        podCount: pods.length,
+        pods: pods,
+        timestamp: timestamp.toISOString(),
+        message: `Mass failure: ${pods.length} pods`,
+        classification: {
+          category: 'mass_disappearance',
+          description: `Mass pod disappearance`
+        }
+      }],
+      summary: {
+        totalChanges: 1,
+        massEvents: 1,
+        individualEvents: 0,
+        recoveryEvents: 0
+      },
+      targetGroup: targetGroup,
+      timestamp: timestamp
+    });
+  }
+
+  /**
+   * Convenience method for recovery alerts
+   */
+  generateRecoveryAlert(pods, namespace, targetGroup, timestamp = new Date()) {
+    return this.generatePodAlert({
+      alertType: 'info',
+      title: 'KUBERNETES POD RECOVERY',
+      subtitle: `${pods.length} pods recovered in '${namespace}'`,
+      classification: {
+        category: 'recovery',
+        description: `Pod recovery in ${namespace}`
+      },
+      events: [{
+        type: 'pods_started',
+        namespace: namespace,
+        podCount: pods.length,
+        pods: pods,
+        timestamp: timestamp.toISOString(),
+        message: `Recovery: ${pods.length} pods started`,
+        classification: {
+          category: 'recovery',
+          description: `Pod recovery`
+        }
+      }],
+      summary: {
+        totalChanges: 1,
+        massEvents: 0,
+        individualEvents: 0,
+        recoveryEvents: 1
+      },
+      targetGroup: targetGroup,
+      timestamp: timestamp
+    });
+  }
+  
 generateRecommendations(alertType, classification) {
   const isIndividualAlert = classification?.category === 'individual_change';
   const isMassFailure = classification?.category === 'mass_disappearance';
