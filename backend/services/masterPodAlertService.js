@@ -16,6 +16,10 @@ class MasterPodAlertService {
     this.alertQueue = new Map(); // Smart batching queue
     this.activeTimers = new Map(); // Track pending alerts
     
+    // NEW: Add pod tracking for change detection
+    this.previousPods = null; // Will be initialized on first run
+    this.lastCheckTime = new Date();
+    
     // Initialize our unified components
     this.classifier = new PodEventClassifier();
     this.templates = new UnifiedEmailTemplates();
@@ -26,7 +30,7 @@ class MasterPodAlertService {
     
     console.log('🎯 Master Pod Alert Service initialized');
     console.log(`📊 Config loaded: ${Object.keys(this.config).join(', ')}`);
-  }
+    }
 
   /**
    * Start the unified monitoring system
@@ -75,82 +79,222 @@ class MasterPodAlertService {
    */
   stopMonitoring() {
     if (!this.isMonitoring) {
-      console.log('⚠️ Master pod monitoring not running');
-      return false;
+        console.log('⚠️ Master pod monitoring not running');
+        return false;
     }
 
     console.log('🛑 Stopping Master Pod Alert Service...');
     
     if (this.checkInterval) {
-      this.checkInterval.stop();
-      this.checkInterval = null;
+        this.checkInterval.stop();
+        this.checkInterval = null;
     }
 
     // Clear any pending alert timers
     this.activeTimers.forEach((timer, key) => {
-      clearTimeout(timer);
-      console.log(`⏰ Cleared pending alert timer: ${key}`);
+        clearTimeout(timer);
+        console.log(`⏰ Cleared pending alert timer: ${key}`);
     });
     this.activeTimers.clear();
     this.alertQueue.clear();
     
+    // NEW: Clear pod tracking
+    this.previousPods = null;
+    this.lastCheckTime = new Date();
+    
     this.isMonitoring = false;
     console.log('✅ Master Pod Alert Service stopped');
     return true;
-  }
+    }
+
 
   /**
    * Main monitoring loop - checks for pod changes and processes alerts
    */
   async checkForPodChanges() {
     try {
-      console.log('🔍 [Master] Checking for pod changes...');
-      
-      // Get current pods from Kubernetes
-      let currentPods = [];
-      try {
+        console.log('🔍 [Master] Checking for pod changes...');
+        
+        // Get current pods from Kubernetes
+        let currentPods = [];
+        try {
         const allPods = await kubernetesService.getAllPodsWithContainers();
         
         // Apply filtering (same logic as old system)
         currentPods = allPods.filter(pod => {
-          // Exclude Completed/Succeeded pods from monitoring
-          if (pod.status === 'Completed' || pod.status === 'Succeeded') {
+            // Exclude Completed/Succeeded pods from monitoring
+            if (pod.status === 'Completed' || pod.status === 'Succeeded') {
             return false;
-          }
-          
-          // Exclude pods with 0/X ready ratio unless they're actively running/pending
-          if (pod.readinessRatio && pod.readinessRatio.startsWith('0/') && 
-              pod.status !== 'Running' && pod.status !== 'Pending') {
+            }
+            
+            // Exclude pods with 0/X ready ratio unless they're actively running/pending
+            if (pod.readinessRatio && pod.readinessRatio.startsWith('0/') && 
+                pod.status !== 'Running' && pod.status !== 'Pending') {
             return false;
-          }
-          
-          return true;
+            }
+            
+            return true;
         });
         
         console.log(`📡 [Master] Current active pods: ${currentPods.length} (filtered from ${allPods.length} total)`);
-      } catch (k8sError) {
+        } catch (k8sError) {
         console.log('⚠️ [Master] Could not fetch current pods from K8s:', k8sError.message);
         return;
-      }
-      
-      // Update lifecycle tracking and get changes (reuse existing logic)
-      const changes = await podLifecycleService.updatePodLifecycle(currentPods);
-      
-      if (changes.length > 0) {
+        }
+        
+        // NEW: Use our own change detection instead of podLifecycleService.updatePodLifecycle
+        const changes = await this.detectPodChanges(currentPods);
+        
+        if (changes.length > 0) {
         console.log(`🔄 [Master] Pod changes detected: ${changes.length}`);
         await this.processChanges(changes);
-      } else {
+        } else {
         console.log(`✅ [Master] No pod changes detected`);
-      }
-      
+        }
+        
     } catch (error) {
-      console.error('❌ [Master] Pod monitoring check failed:', error);
+        console.error('❌ [Master] Pod monitoring check failed:', error);
     }
-  }
+    }
 
-  /**
-   * Process detected changes through the unified alert system
-   */
+ async detectPodChanges(currentPods) {
+  try {
+    // Store current pods state for comparison
+    if (!this.previousPods) {
+      this.previousPods = new Map();
+      
+      // Initialize with current pods
+      currentPods.forEach(pod => {
+        const key = `${pod.namespace}/${pod.name}`;
+        this.previousPods.set(key, {
+          ...pod,
+          lastSeen: new Date()
+        });
+      });
+      
+      console.log('🔍 [Master] Initialized pod tracking with current state');
+      return []; // No changes on first run
+    }
+
+    const changes = [];
+    const currentPodMap = new Map();
+    
+    // Map current pods
+    currentPods.forEach(pod => {
+      const key = `${pod.namespace}/${pod.name}`;
+      currentPodMap.set(key, pod);
+    });
+
+    // Check for disappeared pods
+    const disappearedPods = [];
+    for (const [key, previousPod] of this.previousPods) {
+      if (!currentPodMap.has(key)) {
+        disappearedPods.push(previousPod);
+        console.log(`🔍 [Master] Pod disappeared: ${key}`);
+      }
+    }
+
+    // Check for new pods
+    const newPods = [];
+    for (const [key, currentPod] of currentPodMap) {
+      if (!this.previousPods.has(key)) {
+        newPods.push(currentPod);
+        console.log(`🔍 [Master] New pod appeared: ${key}`);
+      }
+    }
+
+    // Group disappeared pods by namespace for mass disappearance detection
+    const disappearedByNamespace = {};
+    disappearedPods.forEach(pod => {
+      const ns = pod.namespace || 'default';
+      if (!disappearedByNamespace[ns]) {
+        disappearedByNamespace[ns] = [];
+      }
+      disappearedByNamespace[ns].push(pod);
+    });
+
+    // Generate change events
+    Object.entries(disappearedByNamespace).forEach(([namespace, pods]) => {
+      if (pods.length >= this.config.classification.massDisappearanceThreshold) {
+        // Mass disappearance
+        changes.push({
+          type: 'mass_disappearance',
+          namespace: namespace,
+          podCount: pods.length,
+          pods: pods,
+          timestamp: new Date().toISOString(),
+          message: `${pods.length} pods disappeared in namespace '${namespace}'`
+        });
+      } else {
+        // Individual pod disappearances
+        pods.forEach(pod => {
+          changes.push({
+            type: 'pod_deleted',
+            namespace: namespace,
+            podCount: 1,
+            podName: pod.name,
+            pods: [pod],
+            timestamp: new Date().toISOString(),
+            message: `Pod '${pod.name}' disappeared in namespace '${namespace}'`
+          });
+        });
+      }
+    });
+
+    // Group new pods by namespace for recovery detection
+    const newByNamespace = {};
+    newPods.forEach(pod => {
+      const ns = pod.namespace || 'default';
+      if (!newByNamespace[ns]) {
+        newByNamespace[ns] = [];
+      }
+      newByNamespace[ns].push(pod);
+    });
+
+    // Generate recovery events for new pods
+    Object.entries(newByNamespace).forEach(([namespace, pods]) => {
+      if (pods.length > 1) {
+        // Multiple pods started
+        changes.push({
+          type: 'pods_started',
+          namespace: namespace,
+          podCount: pods.length,
+          pods: pods,
+          timestamp: new Date().toISOString(),
+          message: `${pods.length} pods started in namespace '${namespace}'`
+        });
+      } else {
+        // Single pod started
+        changes.push({
+          type: 'pod_started',
+          namespace: namespace,
+          podCount: 1,
+          podName: pods[0].name,
+          pods: pods,
+          timestamp: new Date().toISOString(),
+          message: `Pod '${pods[0].name}' started in namespace '${namespace}'`
+        });
+      }
+    });
+
+    // Update previous pods state
+    this.previousPods.clear();
+    currentPods.forEach(pod => {
+      const key = `${pod.namespace}/${pod.name}`;
+      this.previousPods.set(key, {
+        ...pod,
+        lastSeen: new Date()
+      });
+    });
+
+    return changes;
+
+  } catch (error) {
+    console.error('❌ [Master] Failed to detect pod changes:', error);
+    return [];
+  }
+} 
+
   async processChanges(changes) {
     try {
       // Get Kubernetes configuration
@@ -377,19 +521,20 @@ class MasterPodAlertService {
    * Get service status for monitoring
    */
   getStatus() {
-    return {
-      isMonitoring: this.isMonitoring,
-      checkFrequency: this.checkFrequency,
-      queuedAlerts: this.alertQueue.size,
-      activeTimers: this.activeTimers.size,
-      config: {
-        unifiedDesign: this.config.templates.useUnifiedDesign,
-        singlePodAlerts: this.config.classification.singlePodAlerts.enabled,
-        massThreshold: this.config.classification.massDisappearanceThreshold
-      },
-      lastCheck: new Date()
-    };
-  }
+  return {
+    isMonitoring: this.isMonitoring,
+    checkFrequency: this.checkFrequency,
+    queuedAlerts: this.alertQueue.size,
+    activeTimers: this.activeTimers.size,
+    trackedPods: this.previousPods ? this.previousPods.size : 0,
+    lastCheck: this.lastCheckTime,
+    config: {
+      unifiedDesign: this.config.templates.useUnifiedDesign,
+      singlePodAlerts: this.config.classification.singlePodAlerts.enabled,
+      massThreshold: this.config.classification.massDisappearanceThreshold
+    }
+  };
+}
 
 
   async sendTestAlert(emailGroupId, alertType = 'warning') {
