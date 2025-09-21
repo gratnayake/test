@@ -20,6 +20,8 @@ const systemHeartbeatService = require('./services/systemHeartbeatService');
 const podMonitoringService = require('./services/podMonitoringService');
 const podRecoveryNotifier = require('./services/podRecoveryNotifier');
 const autoRecoveryRoutes = require('./routes/autoRecovery');
+const masterPodAlertService = require('./services/masterPodAlertService');
+
 
 
 const { exec } = require('child_process');
@@ -3637,6 +3639,236 @@ app.post('/api/kubernetes/restart-alerts/test', async (req, res) => {
     });
   }
 });
+
+app.get('/api/master-alerts/status', (req, res) => {
+  try {
+    const status = masterPodAlertService.getStatus();
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('❌ Master alerts status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Start the master alert service
+app.post('/api/master-alerts/start', (req, res) => {
+  try {
+    const started = masterPodAlertService.startMonitoring();
+    
+    if (started) {
+      res.json({
+        success: true,
+        message: 'Master Pod Alert Service started successfully',
+        status: masterPodAlertService.getStatus()
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Failed to start master alerts (already running or not configured)'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Master alerts start error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Stop the master alert service
+app.post('/api/master-alerts/stop', (req, res) => {
+  try {
+    const stopped = masterPodAlertService.stopMonitoring();
+    
+    if (stopped) {
+      res.json({
+        success: true,
+        message: 'Master Pod Alert Service stopped successfully'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Master alerts was not running'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Master alerts stop error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Send test alert (for testing the new system)
+app.post('/api/master-alerts/test', async (req, res) => {
+  try {
+    const { alertType = 'warning' } = req.body;
+    
+    console.log(`🧪 Testing master alert system with ${alertType} alert...`);
+    
+    // Get Kubernetes configuration for email group
+    const kubeConfig = kubernetesConfigService.getConfig();
+    if (!kubeConfig.emailGroupId) {
+      return res.status(400).json({
+        success: false,
+        error: 'No email group configured for Kubernetes alerts'
+      });
+    }
+    
+    // Send test alert using the new system
+    const emailSent = await masterPodAlertService.sendTestAlert(kubeConfig.emailGroupId, alertType);
+    
+    if (emailSent) {
+      res.json({
+        success: true,
+        message: `Test ${alertType} alert sent successfully via Master Alert Service!`,
+        alertType: alertType,
+        emailGroupId: kubeConfig.emailGroupId,
+        system: 'Master Pod Alert Service (NEW)'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: `Failed to send test ${alertType} alert`
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Master test alert error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Test the classification system
+app.post('/api/master-alerts/test-classification', (req, res) => {
+  try {
+    const { changes } = req.body;
+    
+    // Default test changes if none provided
+    const testChanges = changes || [
+      {
+        type: 'mass_disappearance',
+        namespace: 'uattest',
+        podCount: 5,
+        pods: [
+          { name: 'test-pod-1', namespace: 'uattest', status: 'Running' },
+          { name: 'test-pod-2', namespace: 'uattest', status: 'Running' },
+          { name: 'test-pod-3', namespace: 'uattest', status: 'Running' },
+          { name: 'test-pod-4', namespace: 'uattest', status: 'Running' },
+          { name: 'test-pod-5', namespace: 'uattest', status: 'Running' }
+        ],
+        timestamp: new Date().toISOString()
+      },
+      {
+        type: 'pod_deleted',
+        namespace: 'uattest',
+        podCount: 1,
+        podName: 'single-pod-12345-abcde',
+        pods: [
+          { name: 'single-pod-12345-abcde', namespace: 'uattest', status: 'Running' }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ];
+    
+    // Test the classifier
+    const classified = masterPodAlertService.classifier.classifyEvents(testChanges);
+    
+    res.json({
+      success: true,
+      data: {
+        input: testChanges,
+        classification: classified,
+        message: 'Classification test completed successfully'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Classification test error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Compare old vs new system (for migration testing)
+app.get('/api/master-alerts/compare-systems', (req, res) => {
+  try {
+    // Get status of all monitoring services
+    const comparison = {
+      newSystem: {
+        name: 'Master Pod Alert Service',
+        status: masterPodAlertService.getStatus(),
+        features: [
+          'Unified email templates',
+          'Smart event classification', 
+          'Configurable timing',
+          'Single pod alerts',
+          'Mass failure detection',
+          'Smart batching',
+          'No duplicate alerts'
+        ]
+      },
+      oldSystems: {
+        podMonitoring: {
+          name: 'Pod Monitoring Service',
+          running: require('./services/podMonitoringService').getStatus?.() || 'Unknown',
+          limitations: [
+            'Only mass disappearance alerts',
+            'No single pod alerts',
+            'Basic email template'
+          ]
+        },
+        kubernetesMonitoring: {
+          name: 'Kubernetes Monitoring Service', 
+          running: require('./services/kubernetesMonitoringService').getStatus?.() || 'Unknown',
+          limitations: [
+            'Complex batch system',
+            'Workload-focused only',
+            'Different email format'
+          ]
+        },
+        recoveryNotifier: {
+          name: 'Pod Recovery Notifier',
+          running: 'File-based watching',
+          limitations: [
+            'File dependency',
+            'Recovery-only alerts',
+            'Different email format'
+          ]
+        }
+      },
+      recommendation: 'Migrate to Master Pod Alert Service for unified, consistent alerting'
+    };
+    
+    res.json({
+      success: true,
+      data: comparison
+    });
+    
+  } catch (error) {
+    console.error('❌ System comparison error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('💥 Unhandled error:', err);
