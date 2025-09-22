@@ -30,7 +30,7 @@ class KubernetesMonitoringService {
     this.immediateAlertThreshold = 3;
     this.podRestartTracking = new Map(); // Track individual pod restart counts
     this.restartAlertConfig = {
-      enabled: false,
+      enabled: true,
       threshold: 1, // Alert on any restart (set higher to be less noisy)
       cooldownMs: 60000   // 5 minutes - don't alert again for same pod
     };
