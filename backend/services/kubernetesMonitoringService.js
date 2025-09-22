@@ -32,7 +32,7 @@ class KubernetesMonitoringService {
     this.restartAlertConfig = {
       enabled: true,
       threshold: 1, // Alert on any restart (set higher to be less noisy)
-      cooldownMs: 300000 // 5 minutes - don't alert again for same pod
+      cooldownMs: 60000   // 5 minutes - don't alert again for same pod
     };
 
 
@@ -265,7 +265,7 @@ class KubernetesMonitoringService {
   this.cleanupOldPodTracking();
 }
 
-configureRestartAlerts(enabled = true, threshold = 1, cooldownMinutes = 5) {
+configureRestartAlerts(enabled = true, threshold = 1, cooldownMinutes = 1) {
   this.restartAlertConfig = {
     enabled: enabled,
     threshold: threshold,
