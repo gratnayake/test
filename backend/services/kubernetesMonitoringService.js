@@ -365,10 +365,15 @@ class KubernetesMonitoringService {
   async sendDownAlert(missingPods) {
     try {
       const config = kubernetesConfigService.getConfig();
-      if (!config.emailGroupId) {
-        console.log('⚠️ No email group configured for alerts');
+
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == emailGroupId);
+      
+      if (!targetGroup || !targetGroup.enabled) {
+        console.log('❌ Email group not found or disabled');
         return;
       }
+      
       
       const subject = `🚨 Kubernetes Alert: ${missingPods.length} Pod(s) Down`;
       
@@ -391,7 +396,7 @@ class KubernetesMonitoringService {
       
       // Use the correct email method
       const mailOptions = {
-        to: config.emailGroupId,
+        to: targetGroup.emails,
         subject: subject,
         text: emailBody
       };
