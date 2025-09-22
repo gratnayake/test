@@ -20,6 +20,8 @@ const systemHeartbeatService = require('./services/systemHeartbeatService');
 const podMonitoringService = require('./services/podMonitoringService');
 const podRecoveryNotifier = require('./services/podRecoveryNotifier');
 const autoRecoveryRoutes = require('./routes/autoRecovery');
+const singlePodMonitoringService = require('./services/singlePodMonitoringService');
+
 
 
 const { exec } = require('child_process');
@@ -3637,6 +3639,628 @@ app.post('/api/kubernetes/restart-alerts/test', async (req, res) => {
     });
   }
 });
+
+
+app.post('/api/kubernetes/single-pod-monitoring/start', (req, res) => {
+  try {
+    const started = singlePodMonitoringService.startMonitoring();
+    
+    if (started) {
+      res.json({
+        success: true,
+        message: 'Single pod monitoring started successfully'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Single pod monitoring was already running or configuration missing'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Start single pod monitoring error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Stop single pod monitoring
+app.post('/api/kubernetes/single-pod-monitoring/stop', (req, res) => {
+  try {
+    const stopped = singlePodMonitoringService.stopMonitoring();
+    
+    if (stopped) {
+      res.json({
+        success: true,
+        message: 'Single pod monitoring stopped successfully'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Single pod monitoring was not running'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Stop single pod monitoring error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get single pod monitoring status
+app.get('/api/kubernetes/single-pod-monitoring/status', (req, res) => {
+  try {
+    const status = singlePodMonitoringService.getStatus();
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('❌ Get single pod monitoring status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Manual trigger check
+app.post('/api/kubernetes/single-pod-monitoring/check', async (req, res) => {
+  try {
+    await singlePodMonitoringService.manualCheck();
+    
+    res.json({
+      success: true,
+      message: 'Manual pod check completed'
+    });
+  } catch (error) {
+    console.error('❌ Manual pod check error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Clear down pods file
+app.post('/api/kubernetes/single-pod-monitoring/clear-down-pods', (req, res) => {
+  try {
+    const cleared = singlePodMonitoringService.clearDownPods();
+    
+    if (cleared) {
+      res.json({
+        success: true,
+        message: 'Down pods file cleared successfully'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send test alert'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Test single pod alert error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Test "all pods up" alert
+app.post('/api/kubernetes/single-pod-monitoring/test-all-up-alert', async (req, res) => {
+  try {
+    const kubeConfig = kubernetesConfigService.getConfig();
+    
+    if (!kubeConfig.emailGroupId) {
+      return res.status(400).json({
+        success: false,
+        error: 'No email group configured for alerts'
+      });
+    }
+
+    // Create test "all pods up" alert data
+    const testAlertData = {
+      newDownPods: [],
+      recoveredPods: [
+        {
+          key: 'test-namespace/test-pod-1',
+          name: 'test-pod-1',
+          namespace: 'test-namespace',
+          reason: 'Test recovery - Pod was down',
+          downTime: new Date(Date.now() - 900000).toISOString(), // 15 minutes ago
+          recoveryTime: new Date().toISOString(),
+          downDuration: '15m',
+          currentStatus: 'Running'
+        },
+        {
+          key: 'test-namespace/test-pod-2',
+          name: 'test-pod-2',
+          namespace: 'test-namespace',
+          reason: 'Test recovery - Pod was unhealthy',
+          downTime: new Date(Date.now() - 600000).toISOString(), // 10 minutes ago
+          recoveryTime: new Date().toISOString(),
+          downDuration: '10m',
+          currentStatus: 'Running'
+        }
+      ],
+      currentDownPods: [], // No pods down = all up!
+      allPodsUp: true
+    };
+
+    const emailSent = await singlePodMonitoringService.sendPodStatusAlert(
+      testAlertData, 
+      kubeConfig.emailGroupId
+    );
+
+    if (emailSent) {
+      res.json({
+        success: true,
+        message: 'Test "all pods up" alert sent successfully!',
+        testData: testAlertData
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send test "all pods up" alert'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Test all pods up alert error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// =============================================================================
+// MANAGEMENT & DEBUGGING ENDPOINTS
+// =============================================================================
+
+// Get detailed monitoring configuration
+app.get('/api/kubernetes/single-pod-monitoring/config', (req, res) => {
+  try {
+    const kubeConfig = kubernetesConfigService.getConfig();
+    const emailGroups = emailService.getEmailGroups();
+    
+    res.json({
+      success: true,
+      data: {
+        kubernetes: {
+          isConfigured: kubeConfig.isConfigured,
+          hasEmailGroup: !!kubeConfig.emailGroupId,
+          emailGroupId: kubeConfig.emailGroupId,
+          kubeconfigPath: kubeConfig.kubeconfigPath
+        },
+        emailService: {
+          isConfigured: emailService.isConfigured,
+          availableGroups: emailGroups.length,
+          enabledGroups: emailGroups.filter(g => g.enabled).length
+        },
+        monitoring: singlePodMonitoringService.getStatus()
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get single pod monitoring config error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get monitoring logs/history (last 10 checks)
+app.get('/api/kubernetes/single-pod-monitoring/history', (req, res) => {
+  try {
+    // This would require adding history tracking to the service
+    res.json({
+      success: true,
+      data: {
+        message: 'History tracking not yet implemented',
+        suggestion: 'Check server logs for monitoring activity'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get monitoring history error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Force refresh/reset monitoring state
+app.post('/api/kubernetes/single-pod-monitoring/reset', async (req, res) => {
+  try {
+    console.log('🔄 Resetting single pod monitoring state...');
+    
+    // Stop monitoring if running
+    singlePodMonitoringService.stopMonitoring();
+    
+    // Clear down pods file
+    singlePodMonitoringService.clearDownPods();
+    
+    // Optional: Clear previous pods file to force fresh start
+    const previousPodsFile = path.join(__dirname, 'services/../data/previous-pods.json');
+    if (fs.existsSync(previousPodsFile)) {
+      fs.unlinkSync(previousPodsFile);
+      console.log('🗑️ Previous pods file cleared');
+    }
+    
+    res.json({
+      success: true,
+      message: 'Single pod monitoring state reset successfully'
+    });
+  } catch (error) {
+    console.error('❌ Reset monitoring state error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Health check endpoint
+app.get('/api/kubernetes/single-pod-monitoring/health', async (req, res) => {
+  try {
+    const status = singlePodMonitoringService.getStatus();
+    const kubeConfig = kubernetesConfigService.getConfig();
+    
+    const health = {
+      overall: 'healthy',
+      checks: {
+        monitoring_running: status.isMonitoring,
+        kubernetes_configured: kubeConfig.isConfigured,
+        email_group_configured: !!kubeConfig.emailGroupId,
+        email_service_configured: emailService.isConfigured,
+        down_pods_file_accessible: true,
+        previous_pods_file_accessible: true
+      },
+      issues: []
+    };
+    
+    // Check for issues
+    if (!status.isMonitoring) {
+      health.issues.push('Monitoring is not running');
+      health.overall = 'warning';
+    }
+    
+    if (!kubeConfig.isConfigured) {
+      health.issues.push('Kubernetes is not configured');
+      health.overall = 'critical';
+    }
+    
+    if (!kubeConfig.emailGroupId) {
+      health.issues.push('No email group configured for alerts');
+      health.overall = health.overall === 'critical' ? 'critical' : 'warning';
+    }
+    
+    if (!emailService.isConfigured) {
+      health.issues.push('Email service is not configured');
+      health.overall = 'critical';
+    }
+    
+    // Test file access
+    try {
+      singlePodMonitoringService.loadDownPods();
+    } catch (error) {
+      health.checks.down_pods_file_accessible = false;
+      health.issues.push('Cannot access down-pods.json file');
+      health.overall = 'warning';
+    }
+    
+    try {
+      singlePodMonitoringService.loadPreviousPodsState();
+    } catch (error) {
+      health.checks.previous_pods_file_accessible = false;
+      health.issues.push('Cannot access previous-pods.json file');
+      health.overall = 'warning';
+    }
+    
+    res.json({
+      success: true,
+      health: health,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Health check error:', error);
+    res.status(500).json({
+      success: false,
+      health: {
+        overall: 'critical',
+        issues: ['Health check failed: ' + error.message]
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// =============================================================================
+// FILE MANAGEMENT ENDPOINTS
+// =============================================================================
+
+// Download down-pods.json file
+app.get('/api/kubernetes/single-pod-monitoring/download-down-pods', (req, res) => {
+  try {
+    const downPods = singlePodMonitoringService.loadDownPods();
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="down-pods.json"');
+    res.send(JSON.stringify(downPods, null, 2));
+    
+  } catch (error) {
+    console.error('❌ Download down pods error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Download previous-pods.json file  
+app.get('/api/kubernetes/single-pod-monitoring/download-previous-pods', (req, res) => {
+  try {
+    const previousPods = singlePodMonitoringService.loadPreviousPodsState();
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="previous-pods.json"');
+    res.send(JSON.stringify(previousPods, null, 2));
+    
+  } catch (error) {
+    console.error('❌ Download previous pods error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Upload/restore down-pods.json file
+app.post('/api/kubernetes/single-pod-monitoring/upload-down-pods', async (req, res) => {
+  try {
+    const { pods } = req.body;
+    
+    if (!Array.isArray(pods)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid data format. Expected array of pods.'
+      });
+    }
+    
+    // Validate pod structure
+    for (const pod of pods) {
+      if (!pod.key || !pod.name || !pod.namespace || !pod.downTime) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid pod structure. Required fields: key, name, namespace, downTime'
+        });
+      }
+    }
+    
+    singlePodMonitoringService.saveDownPods(pods);
+    
+    res.json({
+      success: true,
+      message: `Uploaded ${pods.length} down pods successfully`
+    });
+    
+  } catch (error) {
+    console.error('❌ Upload down pods error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// =============================================================================
+// STATISTICS & REPORTING ENDPOINTS  
+// =============================================================================
+
+// Get comprehensive statistics
+app.get('/api/kubernetes/single-pod-monitoring/stats', async (req, res) => {
+  try {
+    const status = singlePodMonitoringService.getStatus();
+    const downPods = singlePodMonitoringService.loadDownPods();
+    
+    // Get current pods from Kubernetes for comparison
+    let currentPods = [];
+    try {
+      currentPods = await kubernetesService.getAllPods();
+    } catch (kubeError) {
+      console.warn('Could not fetch current pods from Kubernetes:', kubeError.message);
+    }
+    
+    // Calculate statistics
+    const stats = {
+      monitoring: {
+        isRunning: status.isMonitoring,
+        checkFrequency: status.checkFrequency,
+        lastCheck: status.lastCheck
+      },
+      pods: {
+        total: currentPods.length,
+        healthy: currentPods.filter(p => p.ready === true && p.status === 'Running').length,
+        down: downPods.length,
+        downPods: downPods
+      },
+      namespaces: {},
+      downtime: {
+        longest: null,
+        shortest: null,
+        average: null
+      }
+    };
+    
+    // Calculate namespace breakdown
+    currentPods.forEach(pod => {
+      if (!stats.namespaces[pod.namespace]) {
+        stats.namespaces[pod.namespace] = { total: 0, healthy: 0, down: 0 };
+      }
+      stats.namespaces[pod.namespace].total++;
+      if (pod.ready === true && pod.status === 'Running') {
+        stats.namespaces[pod.namespace].healthy++;
+      }
+    });
+    
+    downPods.forEach(pod => {
+      if (stats.namespaces[pod.namespace]) {
+        stats.namespaces[pod.namespace].down++;
+      }
+    });
+    
+    // Calculate downtime statistics
+    if (downPods.length > 0) {
+      const downtimes = downPods.map(pod => {
+        const downTime = new Date(pod.downTime);
+        const now = new Date();
+        return now - downTime; // milliseconds
+      });
+      
+      stats.downtime.longest = Math.max(...downtimes);
+      stats.downtime.shortest = Math.min(...downtimes);
+      stats.downtime.average = downtimes.reduce((a, b) => a + b, 0) / downtimes.length;
+      
+      // Convert to human readable
+      const formatMs = (ms) => {
+        const minutes = Math.floor(ms / 60000);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+        
+        if (days > 0) return `${days}d ${hours % 24}h ${minutes % 60}m`;
+        if (hours > 0) return `${hours}h ${minutes % 60}m`;
+        return `${minutes}m`;
+      };
+      
+      stats.downtime.longestFormatted = formatMs(stats.downtime.longest);
+      stats.downtime.shortestFormatted = formatMs(stats.downtime.shortest);
+      stats.downtime.averageFormatted = formatMs(stats.downtime.average);
+    }
+    
+    res.json({
+      success: true,
+      data: stats,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Get monitoring stats error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// =============================================================================
+// INTEGRATION ENDPOINTS
+// =============================================================================
+
+// Webhook endpoint for external systems to trigger checks
+app.post('/api/kubernetes/single-pod-monitoring/webhook', async (req, res) => {
+  try {
+    const { source, event, data } = req.body;
+    
+    console.log(`📞 Webhook received from ${source}: ${event}`);
+    
+    // Trigger immediate check
+    await singlePodMonitoringService.manualCheck();
+    
+    res.json({
+      success: true,
+      message: 'Webhook processed and check triggered',
+      processed: {
+        source: source || 'unknown',
+        event: event || 'unknown',
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Webhook processing error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Compatibility endpoint for migration from old system
+app.post('/api/kubernetes/single-pod-monitoring/migrate-from-old', async (req, res) => {
+  try {
+    console.log('🔄 Starting migration from old pod monitoring system...');
+    
+    const results = {
+      stoppedServices: [],
+      clearedData: [],
+      errors: []
+    };
+    
+    // Try to stop old services
+    try {
+      // This would need to be adapted based on your actual old services
+      console.log('Attempting to stop old monitoring services...');
+      results.stoppedServices.push('Migration attempted - manual verification needed');
+    } catch (error) {
+      results.errors.push('Could not auto-stop old services: ' + error.message);
+    }
+    
+    // Start new service
+    const started = singlePodMonitoringService.startMonitoring();
+    
+    if (started) {
+      results.stoppedServices.push('New single pod monitoring started');
+    } else {
+      results.errors.push('Failed to start new monitoring service');
+    }
+    
+    res.json({
+      success: results.errors.length === 0,
+      message: 'Migration completed with results',
+      results: results,
+      nextSteps: [
+        'Verify old monitoring services are stopped',
+        'Test the new monitoring with /api/kubernetes/single-pod-monitoring/test-alert',
+        'Monitor logs for proper operation'
+      ]
+    });
+    
+  } catch (error) {
+    console.error('❌ Migration error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
+// Get current down pods
+app.get('/api/kubernetes/single-pod-monitoring/down-pods', (req, res) => {
+  try {
+    const downPods = singlePodMonitoringService.loadDownPods();
+    
+    res.json({
+      success: true,
+      data: {
+        count: downPods.length,
+        pods: downPods
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get down pods error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('💥 Unhandled error:', err);
@@ -3654,6 +4278,15 @@ app.use((req, res) => {
     error: 'Route not found' 
   });
 });
+
+setTimeout(async () => {
+  const config = kubernetesConfigService.getConfig();
+  if (config.isConfigured && config.emailGroupId) {
+    console.log('🚀 Auto-starting Single Pod Monitoring...');
+    const singlePodMonitoringService = require('./services/singlePodMonitoringService');
+    singlePodMonitoringService.startMonitoring();
+  }
+}, 8000);
 
 setTimeout(async () => {
   try {
