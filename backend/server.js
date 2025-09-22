@@ -20,7 +20,8 @@ const systemHeartbeatService = require('./services/systemHeartbeatService');
 const podMonitoringService = require('./services/podMonitoringService');
 const podRecoveryNotifier = require('./services/podRecoveryNotifier');
 const autoRecoveryRoutes = require('./routes/autoRecovery');
-const hybridSinglePodMonitoringService = require('./services/hybridSinglePodMonitoringService');
+const snapshotBasedPodMonitoringService = require('./services/snapshotBasedPodMonitoringService');
+
 
 
 
@@ -3641,24 +3642,24 @@ app.post('/api/kubernetes/restart-alerts/test', async (req, res) => {
   }
 });
 
-
-app.post('/api/kubernetes/hybrid-pod-monitoring/start', async (req, res) => {
+// Start snapshot-based pod monitoring
+app.post('/api/kubernetes/snapshot-pod-monitoring/start', async (req, res) => {
   try {
-    const started = await hybridSinglePodMonitoringService.startMonitoring();
+    const started = await snapshotBasedPodMonitoringService.startMonitoring();
     
     if (started) {
       res.json({
         success: true,
-        message: 'Hybrid pod monitoring started successfully (snapshot + rolling detection)'
+        message: 'Snapshot-based pod monitoring started successfully (same logic as old system)'
       });
     } else {
       res.status(400).json({
         success: false,
-        error: 'Hybrid pod monitoring was already running or configuration missing'
+        error: 'Snapshot-based pod monitoring was already running or configuration missing'
       });
     }
   } catch (error) {
-    console.error('❌ Start hybrid pod monitoring error:', error);
+    console.error('❌ Start snapshot-based pod monitoring error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3666,24 +3667,24 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/start', async (req, res) => {
   }
 });
 
-// Stop hybrid pod monitoring
-app.post('/api/kubernetes/hybrid-pod-monitoring/stop', (req, res) => {
+// Stop snapshot-based pod monitoring
+app.post('/api/kubernetes/snapshot-pod-monitoring/stop', (req, res) => {
   try {
-    const stopped = hybridSinglePodMonitoringService.stopMonitoring();
+    const stopped = snapshotBasedPodMonitoringService.stopMonitoring();
     
     if (stopped) {
       res.json({
         success: true,
-        message: 'Hybrid pod monitoring stopped successfully'
+        message: 'Snapshot-based pod monitoring stopped successfully'
       });
     } else {
       res.status(400).json({
         success: false,
-        error: 'Hybrid pod monitoring was not running'
+        error: 'Snapshot-based pod monitoring was not running'
       });
     }
   } catch (error) {
-    console.error('❌ Stop hybrid pod monitoring error:', error);
+    console.error('❌ Stop snapshot-based pod monitoring error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3691,17 +3692,17 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/stop', (req, res) => {
   }
 });
 
-// Get hybrid pod monitoring status
-app.get('/api/kubernetes/hybrid-pod-monitoring/status', (req, res) => {
+// Get snapshot-based pod monitoring status
+app.get('/api/kubernetes/snapshot-pod-monitoring/status', (req, res) => {
   try {
-    const status = hybridSinglePodMonitoringService.getStatus();
+    const status = snapshotBasedPodMonitoringService.getStatus();
     
     res.json({
       success: true,
       data: status
     });
   } catch (error) {
-    console.error('❌ Get hybrid pod monitoring status error:', error);
+    console.error('❌ Get snapshot-based pod monitoring status error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3710,16 +3711,16 @@ app.get('/api/kubernetes/hybrid-pod-monitoring/status', (req, res) => {
 });
 
 // Manual trigger check
-app.post('/api/kubernetes/hybrid-pod-monitoring/check', async (req, res) => {
+app.post('/api/kubernetes/snapshot-pod-monitoring/check', async (req, res) => {
   try {
-    await hybridSinglePodMonitoringService.manualCheck();
+    await snapshotBasedPodMonitoringService.manualCheck();
     
     res.json({
       success: true,
-      message: 'Manual hybrid pod check completed'
+      message: 'Manual snapshot-based pod check completed'
     });
   } catch (error) {
-    console.error('❌ Manual hybrid pod check error:', error);
+    console.error('❌ Manual snapshot-based pod check error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3731,10 +3732,10 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/check', async (req, res) => {
 // SNAPSHOT MANAGEMENT ENDPOINTS
 // =============================================================================
 
-// Get initial snapshot
-app.get('/api/kubernetes/hybrid-pod-monitoring/snapshot', (req, res) => {
+// Get current snapshot (pod-snapshot.json)
+app.get('/api/kubernetes/snapshot-pod-monitoring/snapshot', (req, res) => {
   try {
-    const snapshot = hybridSinglePodMonitoringService.getInitialSnapshot();
+    const snapshot = snapshotBasedPodMonitoringService.getSnapshot();
     
     if (snapshot) {
       res.json({
@@ -3744,7 +3745,7 @@ app.get('/api/kubernetes/hybrid-pod-monitoring/snapshot', (req, res) => {
     } else {
       res.status(404).json({
         success: false,
-        error: 'No initial snapshot found'
+        error: 'No pod snapshot found'
       });
     }
   } catch (error) {
@@ -3756,19 +3757,40 @@ app.get('/api/kubernetes/hybrid-pod-monitoring/snapshot', (req, res) => {
   }
 });
 
-// Retake initial snapshot
-app.post('/api/kubernetes/hybrid-pod-monitoring/retake-snapshot', async (req, res) => {
+// Take new snapshot (creates/updates pod-snapshot.json)
+app.post('/api/kubernetes/snapshot-pod-monitoring/take-snapshot', async (req, res) => {
   try {
-    const success = await hybridSinglePodMonitoringService.retakeSnapshot();
+    const snapshot = await snapshotBasedPodMonitoringService.takeSnapshot();
+    
+    res.json({
+      success: true,
+      message: 'Pod snapshot taken successfully',
+      data: {
+        timestamp: snapshot.timestamp,
+        totalPods: snapshot.totalPods
+      }
+    });
+  } catch (error) {
+    console.error('❌ Take snapshot error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Retake snapshot (same as take but with logging)
+app.post('/api/kubernetes/snapshot-pod-monitoring/retake-snapshot', async (req, res) => {
+  try {
+    const success = await snapshotBasedPodMonitoringService.retakeSnapshot();
     
     if (success) {
-      const newSnapshot = hybridSinglePodMonitoringService.getInitialSnapshot();
+      const newSnapshot = snapshotBasedPodMonitoringService.getSnapshot();
       res.json({
         success: true,
-        message: 'Initial snapshot retaken successfully',
+        message: 'Pod snapshot retaken successfully',
         data: {
           timestamp: newSnapshot.timestamp,
-          healthyPods: newSnapshot.healthyPods,
           totalPods: newSnapshot.totalPods
         }
       });
@@ -3787,15 +3809,15 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/retake-snapshot', async (req, re
   }
 });
 
-// Clear initial snapshot
-app.post('/api/kubernetes/hybrid-pod-monitoring/clear-snapshot', (req, res) => {
+// Clear snapshot (deletes pod-snapshot.json)
+app.post('/api/kubernetes/snapshot-pod-monitoring/clear-snapshot', (req, res) => {
   try {
-    const cleared = hybridSinglePodMonitoringService.clearInitialSnapshot();
+    const cleared = snapshotBasedPodMonitoringService.clearSnapshot();
     
     if (cleared) {
       res.json({
         success: true,
-        message: 'Initial snapshot cleared successfully'
+        message: 'Pod snapshot cleared successfully'
       });
     } else {
       res.status(500).json({
@@ -3817,24 +3839,15 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/clear-snapshot', (req, res) => {
 // =============================================================================
 
 // Get current down pods
-app.get('/api/kubernetes/hybrid-pod-monitoring/down-pods', (req, res) => {
+app.get('/api/kubernetes/snapshot-pod-monitoring/down-pods', (req, res) => {
   try {
-    const downPods = hybridSinglePodMonitoringService.loadDownPods();
-    
-    // Enhance with additional analysis
-    const analysis = {
-      snapshotDetections: downPods.filter(p => p.detectionMethod === 'snapshot').length,
-      rollingDetections: downPods.filter(p => p.detectionMethod === 'rolling').length,
-      healthyAtStartup: downPods.filter(p => p.wasHealthyAtStartup === true).length,
-      notInBaseline: downPods.filter(p => p.wasHealthyAtStartup === false).length
-    };
+    const downPods = snapshotBasedPodMonitoringService.loadDownPods();
     
     res.json({
       success: true,
       data: {
         count: downPods.length,
-        pods: downPods,
-        analysis: analysis
+        pods: downPods
       }
     });
   } catch (error) {
@@ -3847,9 +3860,9 @@ app.get('/api/kubernetes/hybrid-pod-monitoring/down-pods', (req, res) => {
 });
 
 // Clear down pods file
-app.post('/api/kubernetes/hybrid-pod-monitoring/clear-down-pods', (req, res) => {
+app.post('/api/kubernetes/snapshot-pod-monitoring/clear-down-pods', (req, res) => {
   try {
-    const cleared = hybridSinglePodMonitoringService.clearDownPods();
+    const cleared = snapshotBasedPodMonitoringService.clearDownPods();
     
     if (cleared) {
       res.json({
@@ -3875,25 +3888,25 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/clear-down-pods', (req, res) => 
 // TESTING ENDPOINTS
 // =============================================================================
 
-// Test hybrid alert (mixed changes)
-app.post('/api/kubernetes/hybrid-pod-monitoring/test-alert', async (req, res) => {
+// Test snapshot-based alert (mixed changes)
+app.post('/api/kubernetes/snapshot-pod-monitoring/test-alert', async (req, res) => {
   try {
-    const emailSent = await hybridSinglePodMonitoringService.sendTestHybridAlert('mixed');
+    const emailSent = await snapshotBasedPodMonitoringService.sendTestAlert('mixed');
 
     if (emailSent) {
       res.json({
         success: true,
-        message: 'Test hybrid alert sent successfully! (snapshot + rolling detections)',
+        message: 'Test snapshot-based alert sent successfully! (includes restart detection)',
         alertType: 'mixed'
       });
     } else {
       res.status(500).json({
         success: false,
-        error: 'Failed to send test hybrid alert'
+        error: 'Failed to send test snapshot-based alert'
       });
     }
   } catch (error) {
-    console.error('❌ Test hybrid alert error:', error);
+    console.error('❌ Test snapshot-based alert error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3902,14 +3915,14 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/test-alert', async (req, res) =>
 });
 
 // Test "all pods up" alert
-app.post('/api/kubernetes/hybrid-pod-monitoring/test-all-up-alert', async (req, res) => {
+app.post('/api/kubernetes/snapshot-pod-monitoring/test-all-up-alert', async (req, res) => {
   try {
-    const emailSent = await hybridSinglePodMonitoringService.sendTestHybridAlert('all-up');
+    const emailSent = await snapshotBasedPodMonitoringService.sendTestAlert('all-up');
 
     if (emailSent) {
       res.json({
         success: true,
-        message: 'Test "all pods up" hybrid alert sent successfully!',
+        message: 'Test "all pods back to snapshot state" alert sent successfully!',
         alertType: 'all-up'
       });
     } else {
@@ -3928,126 +3941,95 @@ app.post('/api/kubernetes/hybrid-pod-monitoring/test-all-up-alert', async (req, 
 });
 
 // =============================================================================
-// COMPREHENSIVE ANALYSIS ENDPOINTS
+// COMPARISON AND DEBUGGING ENDPOINTS
 // =============================================================================
 
-// Get comprehensive hybrid analysis
-app.get('/api/kubernetes/hybrid-pod-monitoring/analysis', async (req, res) => {
+// Compare current pods vs snapshot
+app.get('/api/kubernetes/snapshot-pod-monitoring/compare', async (req, res) => {
   try {
-    const status = hybridSinglePodMonitoringService.getStatus();
-    const downPods = hybridSinglePodMonitoringService.loadDownPods();
-    const snapshot = hybridSinglePodMonitoringService.getInitialSnapshot();
+    const snapshot = snapshotBasedPodMonitoringService.getSnapshot();
     
-    // Get current pods for comparison
-    let currentPods = [];
-    try {
-      currentPods = await kubernetesService.getAllPods();
-    } catch (kubeError) {
-      console.warn('Could not fetch current pods from Kubernetes:', kubeError.message);
-    }
-    
-    const analysis = {
-      monitoring: {
-        isRunning: status.isMonitoring,
-        approach: 'hybrid',
-        detectionMethods: ['snapshot', 'rolling']
-      },
-      snapshot: {
-        exists: !!snapshot,
-        timestamp: snapshot?.timestamp,
-        healthyPods: snapshot?.healthyPods || 0,
-        totalPods: snapshot?.totalPods || 0,
-        ageMinutes: snapshot ? Math.floor((new Date() - new Date(snapshot.timestamp)) / 60000) : null
-      },
-      current: {
-        totalPods: currentPods.length,
-        healthyPods: currentPods.filter(p => p.ready === true && p.status === 'Running').length,
-        downPods: downPods.length
-      },
-      detectionBreakdown: {
-        snapshotDetections: downPods.filter(p => p.detectionMethod === 'snapshot').length,
-        rollingDetections: downPods.filter(p => p.detectionMethod === 'rolling').length,
-        healthyAtStartup: downPods.filter(p => p.wasHealthyAtStartup === true).length,
-        notInBaseline: downPods.filter(p => p.wasHealthyAtStartup === false).length
-      },
-      recommendations: []
-    };
-    
-    // Generate recommendations
     if (!snapshot) {
-      analysis.recommendations.push('Take initial snapshot to enable baseline monitoring');
-    } else if (analysis.snapshot.ageMinutes > 1440) { // 24 hours
-      analysis.recommendations.push('Consider retaking snapshot - current baseline is over 24 hours old');
+      return res.status(404).json({
+        success: false,
+        error: 'No snapshot found to compare against'
+      });
     }
     
-    if (analysis.detectionBreakdown.snapshotDetections > 0) {
-      analysis.recommendations.push('Snapshot detections indicate pods that were healthy at startup are now down');
-    }
+    // Get current pods
+    const currentPods = await kubernetesService.getAllPods();
     
-    if (analysis.detectionBreakdown.rollingDetections > 0) {
-      analysis.recommendations.push('Rolling detections show recent pod failures - check for deployment issues');
-    }
-    
-    if (downPods.length === 0 && currentPods.length > 0) {
-      analysis.recommendations.push('All pods are healthy - system is operating normally');
-    }
-    
-    res.json({
-      success: true,
-      data: analysis,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Get hybrid analysis error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Get detection method comparison
-app.get('/api/kubernetes/hybrid-pod-monitoring/detection-comparison', (req, res) => {
-  try {
-    const downPods = hybridSinglePodMonitoringService.loadDownPods();
-    
+    // Create comparison
     const comparison = {
       snapshot: {
-        description: 'Compares current state vs initial healthy baseline',
-        detections: downPods.filter(p => p.detectionMethod === 'snapshot'),
-        advantages: [
-          'Catches pods that were healthy at startup but are now down',
-          'Ignores pods that were already unhealthy at startup',
-          'Good for detecting unexpected infrastructure failures'
-        ]
+        timestamp: snapshot.timestamp,
+        totalPods: snapshot.totalPods,
+        ageMinutes: Math.floor((new Date() - new Date(snapshot.timestamp)) / 60000)
       },
-      rolling: {
-        description: 'Compares current state vs previous minute state',
-        detections: downPods.filter(p => p.detectionMethod === 'rolling'),
-        advantages: [
-          'Immediate detection of any pod status change',
-          'Catches new pods that become unhealthy',
-          'Fast response to deployment issues'
-        ]
+      current: {
+        timestamp: new Date().toISOString(),
+        totalPods: currentPods.length
       },
-      hybrid: {
-        description: 'Combines both methods for comprehensive monitoring',
-        totalDetections: downPods.length,
-        benefits: [
-          'Best of both worlds - baseline and immediate detection',
-          'Reduces false positives from expected changes',
-          'Provides context about detection source'
-        ]
+      differences: {
+        podCountChange: currentPods.length - snapshot.totalPods,
+        missingPods: [],
+        newPods: [],
+        changedPods: []
       }
     };
+    
+    // Create maps for comparison
+    const snapshotMap = new Map();
+    snapshot.pods.forEach(pod => {
+      snapshotMap.set(`${pod.namespace}/${pod.name}`, pod);
+    });
+    
+    const currentMap = new Map();
+    currentPods.forEach(pod => {
+      currentMap.set(`${pod.namespace}/${pod.name}`, pod);
+    });
+    
+    // Find differences
+    for (const [key, snapshotPod] of snapshotMap) {
+      const currentPod = currentMap.get(key);
+      if (!currentPod) {
+        comparison.differences.missingPods.push(snapshotPod);
+      } else {
+        // Check for changes
+        if (snapshotPod.status !== currentPod.status || 
+            snapshotPod.ready !== currentPod.ready ||
+            snapshotPod.restarts !== currentPod.restarts) {
+          comparison.differences.changedPods.push({
+            pod: key,
+            snapshot: {
+              status: snapshotPod.status,
+              ready: snapshotPod.ready,
+              restarts: snapshotPod.restarts
+            },
+            current: {
+              status: currentPod.status,
+              ready: currentPod.ready,
+              restarts: currentPod.restarts
+            }
+          });
+        }
+      }
+    }
+    
+    // Find new pods
+    for (const [key, currentPod] of currentMap) {
+      if (!snapshotMap.has(key)) {
+        comparison.differences.newPods.push(currentPod);
+      }
+    }
     
     res.json({
       success: true,
       data: comparison
     });
+    
   } catch (error) {
-    console.error('❌ Get detection comparison error:', error);
+    console.error('❌ Compare pods error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -4055,93 +4037,73 @@ app.get('/api/kubernetes/hybrid-pod-monitoring/detection-comparison', (req, res)
   }
 });
 
-// =============================================================================
-// HEALTH AND DIAGNOSTICS
-// =============================================================================
-
-// Health check endpoint
-app.get('/api/kubernetes/hybrid-pod-monitoring/health', async (req, res) => {
+// Debug detection logic
+app.get('/api/kubernetes/snapshot-pod-monitoring/debug', async (req, res) => {
   try {
-    const status = hybridSinglePodMonitoringService.getStatus();
-    const kubeConfig = kubernetesConfigService.getConfig();
-    const snapshot = hybridSinglePodMonitoringService.getInitialSnapshot();
+    const snapshot = snapshotBasedPodMonitoringService.getSnapshot();
+    const downPods = snapshotBasedPodMonitoringService.loadDownPods();
+    const status = snapshotBasedPodMonitoringService.getStatus();
     
-    const health = {
-      overall: 'healthy',
-      checks: {
-        monitoring_running: status.isMonitoring,
-        kubernetes_configured: kubeConfig.isConfigured,
-        email_group_configured: !!kubeConfig.emailGroupId,
-        email_service_configured: emailService.isConfigured,
-        snapshot_exists: !!snapshot,
-        snapshot_recent: snapshot ? (new Date() - new Date(snapshot.timestamp)) < 86400000 : false, // 24 hours
-        files_accessible: true
+    let currentPods = [];
+    try {
+      currentPods = await kubernetesService.getAllPods();
+    } catch (kubeError) {
+      console.warn('Could not fetch current pods:', kubeError.message);
+    }
+    
+    const debug = {
+      monitoring: {
+        isRunning: status.isMonitoring,
+        checkFrequency: status.checkFrequency
       },
-      issues: []
+      snapshot: {
+        exists: !!snapshot,
+        timestamp: snapshot?.timestamp,
+        podCount: snapshot?.totalPods || 0,
+        ageMinutes: snapshot ? Math.floor((new Date() - new Date(snapshot.timestamp)) / 60000) : null
+      },
+      current: {
+        podCount: currentPods.length,
+        healthyPods: currentPods.filter(p => p.ready === true && p.status === 'Running').length
+      },
+      tracking: {
+        downPods: downPods.length,
+        downPodsList: downPods.map(p => `${p.namespace}/${p.name}`)
+      },
+      lastCheck: status.lastCheck,
+      recommendations: []
     };
     
-    // Check for issues
-    if (!status.isMonitoring) {
-      health.issues.push('Hybrid monitoring is not running');
-      health.overall = 'warning';
-    }
-    
-    if (!kubeConfig.isConfigured) {
-      health.issues.push('Kubernetes is not configured');
-      health.overall = 'critical';
-    }
-    
-    if (!kubeConfig.emailGroupId) {
-      health.issues.push('No email group configured for alerts');
-      health.overall = health.overall === 'critical' ? 'critical' : 'warning';
-    }
-    
-    if (!emailService.isConfigured) {
-      health.issues.push('Email service is not configured');
-      health.overall = 'critical';
-    }
-    
+    // Generate recommendations
     if (!snapshot) {
-      health.issues.push('No initial snapshot taken - baseline monitoring disabled');
-      health.overall = health.overall === 'critical' ? 'critical' : 'warning';
-    } else if (!health.checks.snapshot_recent) {
-      health.issues.push('Initial snapshot is over 24 hours old - consider retaking');
-      health.overall = health.overall === 'critical' ? 'critical' : 'warning';
+      debug.recommendations.push('No snapshot exists - take one to enable monitoring');
+    } else if (debug.snapshot.ageMinutes > 1440) {
+      debug.recommendations.push('Snapshot is over 24 hours old - consider retaking');
     }
     
-    // Test file access
-    try {
-      hybridSinglePodMonitoringService.loadDownPods();
-      hybridSinglePodMonitoringService.loadPreviousPodsState();
-    } catch (error) {
-      health.checks.files_accessible = false;
-      health.issues.push('Cannot access monitoring files');
-      health.overall = 'warning';
+    if (!status.isMonitoring) {
+      debug.recommendations.push('Monitoring is not running - start it to begin detection');
+    }
+    
+    if (downPods.length > 0) {
+      debug.recommendations.push(`${downPods.length} pods are tracked as having issues`);
     }
     
     res.json({
       success: true,
-      health: health,
-      hybridSpecific: {
-        snapshotAge: snapshot ? Math.floor((new Date() - new Date(snapshot.timestamp)) / 60000) : null,
-        detectionMethods: ['snapshot', 'rolling'],
-        currentDownPods: status.currentDownPods
-      },
-      timestamp: new Date().toISOString()
+      data: debug
     });
     
   } catch (error) {
-    console.error('❌ Hybrid health check error:', error);
+    console.error('❌ Debug snapshot monitoring error:', error);
     res.status(500).json({
       success: false,
-      health: {
-        overall: 'critical',
-        issues: ['Health check failed: ' + error.message]
-      },
-      timestamp: new Date().toISOString()
+      error: error.message
     });
   }
 });
+
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('💥 Unhandled error:', err);
@@ -4166,7 +4128,7 @@ setTimeout(async () => {
   if (config.isConfigured && config.emailGroupId) {
     console.log('🚀 Auto-starting Single Pod Monitoring...');
     
-    hybridSinglePodMonitoringService.startMonitoring();
+    snapshotBasedPodMonitoringService.startMonitoring();
   }
 }, 8000);
 
