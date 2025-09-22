@@ -886,10 +886,6 @@ async checkWorkloadHealth(current, previous, emailGroupId) {
     console.log(`✅ WORKLOAD RECOVERED: ${workloadKey}`);
     this.addToBatchAlert('recovered', current, emailGroupId);
   }
-  else {
-    this.addToBatchAlert('recovered', current, emailGroupId);
-
-  }
 }
 
 async getWorkloadStatusWithInitialFilter() {
