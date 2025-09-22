@@ -887,7 +887,7 @@ async checkWorkloadHealth(current, previous, emailGroupId) {
     this.addToBatchAlert('recovered', current, emailGroupId);
   }
   else {
-    this.addToBatchAlert('test', current, emailGroupId);
+    this.addToBatchAlert('recovered', current, emailGroupId);
 
   }
 }
