@@ -267,7 +267,7 @@ class KubernetesMonitoringService {
 
 configureRestartAlerts(enabled = true, threshold = 1, cooldownMinutes = 1) {
   this.restartAlertConfig = {
-    enabled: false,
+    enabled: true,
     threshold: threshold,
     cooldownMs: cooldownMinutes * 60 * 1000
   };
