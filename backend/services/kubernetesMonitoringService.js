@@ -30,7 +30,7 @@ class KubernetesMonitoringService {
     this.immediateAlertThreshold = 3;
     this.podRestartTracking = new Map(); // Track individual pod restart counts
     this.restartAlertConfig = {
-      enabled: true,
+      enabled: false,
       threshold: 1, // Alert on any restart (set higher to be less noisy)
       cooldownMs: 60000   // 5 minutes - don't alert again for same pod
     };
@@ -153,7 +153,7 @@ class KubernetesMonitoringService {
       lastCheck: new Date(),
       baselineWorkloads: Array.from(this.workloadStatuses.values()).filter(w => w.isBaseline).length,
       restartTracking: {
-      enabled: this.restartAlertConfig.enabled,
+      enabled: false,
       threshold: this.restartAlertConfig.threshold,
       cooldownMinutes: this.restartAlertConfig.cooldownMs / 60000,
       trackedPods: this.podRestartTracking.size
@@ -267,7 +267,7 @@ class KubernetesMonitoringService {
 
 configureRestartAlerts(enabled = true, threshold = 1, cooldownMinutes = 1) {
   this.restartAlertConfig = {
-    enabled: enabled,
+    enabled: false,
     threshold: threshold,
     cooldownMs: cooldownMinutes * 60 * 1000
   };
