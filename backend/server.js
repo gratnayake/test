@@ -3695,7 +3695,7 @@ setTimeout(() => {
   console.log(`✅ Started monitoring ${started} URLs`);
 }, 3000);
 
-setTimeout(() => {
+/*setTimeout(() => {
   const kubernetesConfig = kubernetesConfigService.getConfig();
   if (kubernetesConfig.isConfigured && kubernetesConfig.emailGroupId) {
     console.log('🔍 Starting pod recovery notifier...');
@@ -3713,7 +3713,7 @@ setTimeout(async () => {
     const monitoringService = require('./services/kubernetesMonitoringService');
     monitoringService.startMonitoring();
   }
-}, 5000)
+}, 5000)*/
 // Auto-start monitoring if database is configured
 setTimeout(() => {
   const config = dbConfigService.getConfig();
@@ -3732,13 +3732,13 @@ setTimeout(() => {
 
 
 
-setInterval(async () => {
+/*setInterval(async () => {
   try {
     await podRecoveryNotifier.checkAndNotifyRecovery();
   } catch (error) {
     console.error('Error in automatic pod recovery check:', error);
   }
-}, 60000); // Check every 60 seconds
+}, 60000); // Check every 60 seconds*/
 
 
 setTimeout(() => {
