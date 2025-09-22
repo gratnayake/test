@@ -389,7 +389,14 @@ class KubernetesMonitoringService {
       emailBody += `\nTime: ${new Date().toISOString()}\n`;
       emailBody += `Cluster: ${config.kubeconfigPath}\n`;
       
-      await emailService.sendAlert(config.emailGroupId, subject, emailBody);
+      // Use the correct email method
+      const mailOptions = {
+        to: config.emailGroupId,
+        subject: subject,
+        text: emailBody
+      };
+      
+      await emailService.transporter.sendMail(mailOptions);
       console.log(`📧 Down alert sent for ${missingPods.length} pods`);
       
     } catch (error) {
