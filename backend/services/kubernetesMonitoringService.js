@@ -367,7 +367,7 @@ class KubernetesMonitoringService {
       const config = kubernetesConfigService.getConfig();
 
       const groups = emailService.getEmailGroups();
-      const targetGroup = groups.find(g => g.id == emailGroupId);
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
       
       if (!targetGroup || !targetGroup.enabled) {
         console.log('❌ Email group not found or disabled');
@@ -413,8 +413,11 @@ class KubernetesMonitoringService {
   async sendRecoveryAlert(recoveredPods) {
     try {
       const config = kubernetesConfigService.getConfig();
-      if (!config.emailGroupId) {
-        console.log('⚠️ No email group configured for alerts');
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
+      
+      if (!targetGroup || !targetGroup.enabled) {
+        console.log('❌ Email group not found or disabled');
         return;
       }
       
@@ -434,7 +437,13 @@ class KubernetesMonitoringService {
       emailBody += `\nTime: ${new Date().toISOString()}\n`;
       emailBody += `All pods are now healthy and have been restored to the baseline snapshot.\n`;
       
-      await emailService.sendAlert(config.emailGroupId, subject, emailBody);
+      const mailOptions = {
+        to: targetGroup.emails,
+        subject: subject,
+        text: emailBody
+      };
+      
+      await emailService.transporter.sendMail(mailOptions);
       console.log(`📧 Recovery alert sent for ${recoveredPods.length} pods`);
       
     } catch (error) {
