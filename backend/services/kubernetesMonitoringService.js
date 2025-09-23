@@ -130,11 +130,12 @@ class KubernetesMonitoringService {
       if (results.newPods.length > 0) {
         console.log(`🆕 Found ${results.newPods.length} new pods not in snapshot`);
         
-        // Send new pods alert
-        await this.sendRecoveryAlert(results.newPods);
+        // For now, just log the new pods - we can implement alerts later
+        console.log('New pods detected:', results.newPods.map(p => `${p.namespace}/${p.name}`));
         
-        // Add new pods to snapshot
-        await this.addNewPodsToSnapshot(results.newPods);
+        // TODO: Add sendNewPodsAlert() and addNewPodsToSnapshot() methods
+        // await this.sendNewPodsAlert(results.newPods);
+        // await this.addNewPodsToSnapshot(results.newPods);
       }
 
       console.log('✅ Health check completed');
@@ -449,7 +450,7 @@ class KubernetesMonitoringService {
       
       // Use the correct email method
       const mailOptions = {
-        from: emailService.getEmailConfig().user,      
+        from: emailService.getEmailConfig().user,
         to: targetGroup.emails,
         subject: subject,
         text: emailBody
@@ -472,6 +473,13 @@ class KubernetesMonitoringService {
         return;
       }
       
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
+      
+      if (!targetGroup || !targetGroup.enabled) {
+        console.log('❌ Email group not found or disabled');
+        return;
+      }
       const subject = `✅ Kubernetes Recovery: ${recoveredPods.length} Pod(s) Back Online`;
       
       let emailBody = `The following pods have recovered:\n\n`;
@@ -490,7 +498,7 @@ class KubernetesMonitoringService {
       
       // Use the correct email method
       const mailOptions = {
-        from: emailService.getEmailConfig().user,      
+        from: emailService.getEmailConfig().user,
         to: targetGroup.emails,
         subject: subject,
         text: emailBody
