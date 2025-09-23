@@ -133,15 +133,46 @@ class KubernetesMonitoringService {
         // For now, just log the new pods - we can implement alerts later
         console.log('New pods detected:', results.newPods.map(p => `${p.namespace}/${p.name}`));
         
-        // TODO: Add sendNewPodsAlert() and addNewPodsToSnapshot() methods
-        // await this.sendNewPodsAlert(results.newPods);
-        // await this.addNewPodsToSnapshot(results.newPods);
+        
+        await this.sendNewPodsAlert(results.newPods);
+        await this.addNewPodsToSnapshot(results.newPods);
       }
 
       console.log('✅ Health check completed');
       
     } catch (error) {
       console.error('❌ Health check failed:', error);
+    }
+  }
+
+  async removeFromSnapshot(podsToRemove) {
+    try {
+      const snapshot = await this.loadSnapshot();
+      if (!snapshot || !snapshot.pods) {
+        console.log('⚠️ No snapshot found - cannot remove pods');
+        return;
+      }
+      
+      const removeKeys = new Set(
+        podsToRemove.map(pod => `${pod.namespace}/${pod.name}`)
+      );
+      
+      const remainingPods = snapshot.pods.filter(pod => {
+        const key = `${pod.namespace}/${pod.name}`;
+        return !removeKeys.has(key);
+      });
+      
+      // Update snapshot
+      snapshot.pods = remainingPods;
+      snapshot.timestamp = new Date().toISOString();
+      snapshot.totalPods = remainingPods.length;
+      snapshot.lastUpdated = new Date().toISOString();
+      
+      await fs.writeFile(this.snapshotFile, JSON.stringify(snapshot, null, 2));
+      console.log(`📸 Removed ${podsToRemove.length} pods from snapshot (remaining: ${remainingPods.length})`);
+      
+    } catch (error) {
+      console.error('❌ Failed to remove from snapshot:', error);
     }
   }
 
@@ -540,6 +571,9 @@ class KubernetesMonitoringService {
       await this.removeFromDelta(missingPods);
       console.log(`🗑️ Removed ${missingPods.length} alerted pods from delta file`);
       
+      await this.removeFromSnapshot(missingPods);
+      console.log(`📸 Removed ${missingPods.length} alerted pods from snapshot`);
+
     } catch (error) {
       console.error('❌ Failed to send down alert:', error);
     }
