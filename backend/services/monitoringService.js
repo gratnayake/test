@@ -302,6 +302,7 @@ class MonitoringService {
           <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
             <p style="margin: 0;">This alert was sent to: ${targetGroup.name}</p>
             <p style="margin: 5px 0 0 0;">You will receive another email when the database is back online</p>
+            <p style="margin: 0;">Uptime Monitoring System | © tSunami Solutions 2025</p>
           </div>
         </div>
       `

@@ -958,6 +958,7 @@ async sendRecoveryErrorAlert(attemptNumber, errorMessage) {
           <div style="background-color: #e9ecef; padding: 15px; text-align: center; font-size: 12px; color: #6c757d;">
             <p style="margin: 0;">This is an automated recovery notification from the Database Auto-Recovery System</p>
             <p style="margin: 5px 0 0 0;">Please do not attempt manual intervention unless recovery fails</p>
+            <p style="margin: 5px 0 0 0;">Uptime Monitoring System | © tSunami Solutions 2025</p>
           </div>
         </div>
     `;
@@ -1410,7 +1411,7 @@ async restartDatabase() {
       const { exec } = require('child_process');
       
       // YOUR ORACLE SERVICE NAME
-      const oracleServiceName = 'OracleServiceUATCDB';
+      const oracleServiceName = 'OracleServiceIFSCDB';
       const listenerServiceName = 'OracleOraDB19Home1TNSListener';  
       
       console.log(`🔧 Target Oracle Service: ${oracleServiceName}`);
