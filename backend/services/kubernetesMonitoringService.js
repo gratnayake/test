@@ -450,7 +450,7 @@ class KubernetesMonitoringService {
       // Use the correct email method
       const mailOptions = {
         from: emailService.getEmailConfig().user,      
-        to: targetGroup.emailGroupId,
+        to: targetGroup.emails,
         subject: subject,
         text: emailBody
       };
@@ -491,7 +491,7 @@ class KubernetesMonitoringService {
       // Use the correct email method
       const mailOptions = {
         from: emailService.getEmailConfig().user,      
-        to: targetGroup.emailGroupId,
+        to: targetGroup.emails,
         subject: subject,
         text: emailBody
       };
