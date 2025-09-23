@@ -48,12 +48,7 @@ const Sidebar = ({ currentPage, onPageChange }) => {
       key: 'dashboard',
       icon: <DashboardOutlined />,
       label: 'Dashboard Details',
-    },
-    {
-      key: 'downtime-logs',
-      icon: <ClockCircleOutlined />,
-      label: 'Downtime Logs',
-    },
+    },   
     {
       key: 'system-metrics',
       icon: <DesktopOutlined />,
