@@ -354,7 +354,7 @@ class KubernetesMonitoringService {
       const groups = emailService.getEmailGroups();
       const targetGroup = groups.find(g => g.id == config.emailGroupId);
       
-      const subject = `🆕 Kubernetes Alert: ${newPods.length} New Pod(s) Discovered`;
+      const subject = `🆕 Kubernetes Alert: ${newPods.length} Recovered Pod(s) Discovered`;
       
       const htmlBody = this.createNewPodsAlertTemplate(newPods, config);
       
