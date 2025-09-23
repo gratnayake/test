@@ -196,7 +196,7 @@ class MonitoringService {
     } catch (recoveryError) {
       console.error('❌ Auto-recovery process failed:', recoveryError);
     }
-  }, 10000); // Wait 10 seconds before attempting recovery (avoid false alarms)
+  }, 20000); // Wait 10 seconds before attempting recovery (avoid false alarms)
 }
 
   // Handle database coming back up
