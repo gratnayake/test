@@ -1411,7 +1411,7 @@ async restartDatabase() {
       const { exec } = require('child_process');
       
       // YOUR ORACLE SERVICE NAME
-      const oracleServiceName = 'OracleServiceIFSCDB';
+      const oracleServiceName = 'OracleServiceUATCDB';
       const listenerServiceName = 'OracleOraDB19Home1TNSListener';  
       
       console.log(`🔧 Target Oracle Service: ${oracleServiceName}`);
