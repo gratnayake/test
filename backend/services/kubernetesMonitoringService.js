@@ -966,6 +966,8 @@ createDownAlertTemplate(missingPods, config) {
         <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 Pods Recovered</h1>
           <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
+          <p>allPodsHealthy ${clusterHealthStatus.allPodsHealthy}  totalCurrentPods ${clusterHealthStatus.totalCurrentPods} totalSnapshotPods ${clusterHealthStatus.totalSnapshotPods}
+                              
           ${showClusterHealth ? 
             '<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(40, 167, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">🎉 All Original Pods Healthy</p>' :
             ''
