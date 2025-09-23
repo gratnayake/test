@@ -311,6 +311,84 @@ class KubernetesMonitoringService {
     return pod.status === 'Running' && pod.ready;
   }
 
+
+  async sendNewPodsAlert(newPods) {
+    try {
+      const config = kubernetesConfigService.getConfig();
+      if (!config.emailGroupId) {
+        console.log('⚠️ No email group configured for alerts');
+        return;
+      }
+      
+      const subject = `🆕 Kubernetes Alert: ${newPods.length} New Pod(s) Discovered`;
+      
+      let emailBody = `The following new pods were discovered (not in original snapshot):\n\n`;
+      
+      newPods.forEach(pod => {
+        emailBody += `Pod: ${pod.name}\n`;
+        emailBody += `Namespace: ${pod.namespace}\n`;
+        emailBody += `Status: ${pod.status}\n`;
+        emailBody += `Ready: ${pod.ready}\n`;
+        emailBody += `Node: ${pod.node}\n`;
+        emailBody += `Age: ${pod.age}\n`;
+        emailBody += `Discovered: ${pod.discoveredAt}\n`;
+        emailBody += `---\n`;
+      });
+      
+      emailBody += `\nTime: ${new Date().toISOString()}\n`;
+      emailBody += `These pods have been automatically added to the baseline snapshot.\n`;
+      
+      // Use the correct email method
+      const mailOptions = {
+        to: config.emailGroupId,
+        subject: subject,
+        text: emailBody
+      };
+      
+      await emailService.transporter.sendMail(mailOptions);
+      console.log(`📧 New pods alert sent for ${newPods.length} pods`);
+      
+    } catch (error) {
+      console.error('❌ Failed to send new pods alert:', error);
+    }
+  }
+
+  // Add new pods to the snapshot
+  async addNewPodsToSnapshot(newPods) {
+    try {
+      const snapshot = await this.loadSnapshot();
+      if (!snapshot) {
+        console.log('⚠️ No snapshot found - cannot add new pods');
+        return;
+      }
+      
+      // Add new pods to the snapshot
+      newPods.forEach(newPod => {
+        snapshot.pods.push({
+          name: newPod.name,
+          namespace: newPod.namespace,
+          status: newPod.status,
+          restartCount: newPod.restartCount || 0,
+          ready: newPod.ready,
+          age: newPod.age,
+          node: newPod.node || 'unknown',
+          addedToSnapshot: newPod.discoveredAt
+        });
+      });
+      
+      // Update snapshot metadata
+      snapshot.timestamp = new Date().toISOString();
+      snapshot.totalPods = snapshot.pods.length;
+      snapshot.lastUpdated = new Date().toISOString();
+      
+      await fs.writeFile(this.snapshotFile, JSON.stringify(snapshot, null, 2));
+      console.log(`📸 Added ${newPods.length} new pods to snapshot (total: ${snapshot.pods.length})`);
+      
+    } catch (error) {
+      console.error('❌ Failed to add new pods to snapshot:', error);
+    }
+  }
+
   // Update delta file with missing/changed pods
   async updateDeltaFile(missingPods) {
     try {
@@ -458,6 +536,9 @@ class KubernetesMonitoringService {
       
       await emailService.transporter.sendMail(mailOptions);
       console.log(`📧 Down alert sent for ${missingPods.length} pods`);
+
+      await this.removeFromDelta(missingPods);
+      console.log(`🗑️ Removed ${missingPods.length} alerted pods from delta file`);
       
     } catch (error) {
       console.error('❌ Failed to send down alert:', error);
