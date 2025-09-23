@@ -673,11 +673,26 @@ class KubernetesMonitoringService {
       }
 
       // Get current pods
-      const currentPods = await kubernetesService.getAllPods();
+      const allCurrentPods = await kubernetesService.getAllPods();
       
-      // Create map of current pods for quick lookup
+      // Filter out pods with unready containers (same logic as snapshot creation)
+      const fullyReadyCurrentPods = allCurrentPods.filter(pod => {
+        const readyContainers = pod.readyContainers || 0;
+        const totalContainers = pod.totalContainers || 1;
+        
+        // Only include pods where ALL containers are ready (same as snapshot logic)
+        const isFullyReady = readyContainers === totalContainers;
+        
+        if (!isFullyReady) {
+          console.log(`🔍 Excluding pod ${pod.namespace}/${pod.name} from health check (${readyContainers}/${totalContainers} ready)`);
+        }
+        
+        return isFullyReady;
+      });
+      
+      // Create map of fully ready current pods for quick lookup
       const currentPodsMap = new Map();
-      currentPods.forEach(pod => {
+      fullyReadyCurrentPods.forEach(pod => {
         const key = `${pod.namespace}/${pod.name}`;
         currentPodsMap.set(key, pod);
       });
@@ -693,21 +708,32 @@ class KubernetesMonitoringService {
         if (currentPod && this.isPodHealthy(currentPod)) {
           healthyPods++;
         } else {
+          // Check if pod exists but not ready, or completely missing
+          const podInAllCurrent = allCurrentPods.find(p => 
+            p.namespace === snapshotPod.namespace && p.name === snapshotPod.name
+          );
+          
           missingPods.push({
             name: snapshotPod.name,
             namespace: snapshotPod.namespace,
-            currentStatus: currentPod ? currentPod.status : 'Missing'
+            currentStatus: podInAllCurrent ? 
+              `${podInAllCurrent.status} (${podInAllCurrent.readyContainers || 0}/${podInAllCurrent.totalContainers || 1})` : 
+              'Missing'
           });
         }
       });
 
       const allPodsHealthy = healthyPods === snapshot.pods.length;
 
+      console.log(`🔍 Health Check: ${healthyPods}/${snapshot.pods.length} snapshot pods healthy, ${fullyReadyCurrentPods.length} total fully-ready current pods`);
+
       return {
         allPodsHealthy: allPodsHealthy,
         totalSnapshotPods: snapshot.pods.length,
         healthyPods: healthyPods,
-        totalCurrentPods: currentPods.length,
+        totalCurrentPods: fullyReadyCurrentPods.length, // Only fully ready pods
+        totalCurrentPodsIncludingUnready: allCurrentPods.length, // All pods for reference
+        excludedUnreadyPods: allCurrentPods.length - fullyReadyCurrentPods.length,
         missingPods: missingPods,
         healthPercentage: Math.round((healthyPods / snapshot.pods.length) * 100)
       };
@@ -719,6 +745,8 @@ class KubernetesMonitoringService {
         totalSnapshotPods: 0,
         healthyPods: 0,
         totalCurrentPods: 0,
+        totalCurrentPodsIncludingUnready: 0,
+        excludedUnreadyPods: 0,
         missingPods: [],
         error: error.message
       };
@@ -922,7 +950,8 @@ createDownAlertTemplate(missingPods, config) {
   // Create HTML template for new pods alert
   createNewPodsAlertTemplate(newPods, config, clusterHealthStatus) {
     const timestamp = new Date().toISOString();
-    
+    const showClusterHealth = clusterHealthStatus.allPodsHealthy && 
+                              clusterHealthStatus.totalCurrentPods === clusterHealthStatus.totalSnapshotPods;
     return `
     <!DOCTYPE html>
     <html>
@@ -935,47 +964,20 @@ createDownAlertTemplate(missingPods, config) {
         
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
-          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 New Pods Discovered</h1>
+          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 Pods Recovered</h1>
           <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
-          ${clusterHealthStatus.allPodsHealthy ? 
+          ${showClusterHealth ? 
             '<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(40, 167, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">🎉 All Original Pods Healthy</p>' :
-            `<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(220, 53, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">⚠️ ${clusterHealthStatus.healthyPods}/${clusterHealthStatus.totalSnapshotPods} Original Pods Healthy</p>`
+            ''
           }
         </div>
 
         <!-- Content -->
         <div style="padding: 30px;">
-          
-          <!-- Cluster Health Status -->
-          <div style="background-color: ${clusterHealthStatus.allPodsHealthy ? '#d4edda' : '#fff3cd'}; border: 1px solid ${clusterHealthStatus.allPodsHealthy ? '#c3e6cb' : '#ffeaa7'}; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
-            <h3 style="color: ${clusterHealthStatus.allPodsHealthy ? '#155724' : '#856404'}; margin: 0 0 10px 0; font-size: 16px;">
-              ${clusterHealthStatus.allPodsHealthy ? '🎉 Cluster Fully Healthy!' : '⚠️ Cluster Health Status'}
-            </h3>
-            <p style="color: ${clusterHealthStatus.allPodsHealthy ? '#155724' : '#856404'}; margin: 0 0 15px 0; line-height: 1.5;">
-              ${clusterHealthStatus.allPodsHealthy ? 
-                'All original pods from the baseline snapshot are running healthy.' :
-                `${clusterHealthStatus.healthyPods} out of ${clusterHealthStatus.totalSnapshotPods} original pods are healthy (${clusterHealthStatus.healthPercentage}%).`
-              }
-            </p>
-            
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-              <span style="color: #666;">Original Snapshot Pods:</span>
-              <strong>${clusterHealthStatus.totalSnapshotPods}</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-              <span style="color: #666;">Currently Healthy:</span>
-              <strong style="color: ${clusterHealthStatus.allPodsHealthy ? '#28a745' : '#dc3545'};">${clusterHealthStatus.healthyPods}</strong>
-            </div>            
-            <div style="display: flex; justify-content: space-between;">
-              <span style="color: #666;">Health Percentage:</span>
-              <strong style="color: ${clusterHealthStatus.allPodsHealthy ? '#28a745' : '#dc3545'};">${clusterHealthStatus.healthPercentage}%</strong>
-            </div>
-          </div>
-
           <!-- Discovery Alert -->
           <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
             <h3 style="color: #0c5460; margin: 0 0 10px 0; font-size: 16px;">🔍 Discovery Alert</h3>
-            <p style="color: #0c5460; margin: 0; line-height: 1.5;">New pods have been detected that were not in the original baseline snapshot:</p>
+            <p style="color: #0c5460; margin: 0; line-height: 1.5;">Recovered pods have been detected that were not in the original baseline snapshot:</p>
           </div>
 
           <!-- Pod Details Table -->
@@ -1026,7 +1028,7 @@ createDownAlertTemplate(missingPods, config) {
           <div style="background-color: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 20px;">
             <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 16px;">📋 Automatic Actions Taken</h3>
             <ul style="color: #0066cc; margin: 0; padding-left: 20px; line-height: 1.8;">
-              <li>New pods have been automatically added to baseline snapshot</li>
+              <li>Recovered pods have been automatically added to baseline snapshot</li>
               <li>Future monitoring will include these pods</li>
               <li>No manual intervention required</li>
               <li>Pods are healthy and running normally</li>
