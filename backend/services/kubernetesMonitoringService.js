@@ -353,10 +353,11 @@ class KubernetesMonitoringService {
 
       const groups = emailService.getEmailGroups();
       const targetGroup = groups.find(g => g.id == config.emailGroupId);
-      
+      const clusterHealthStatus = await this.checkClusterHealth();
+
       const subject = `🆕 Kubernetes Alert: ${newPods.length} Recovered Pod(s) Discovered`;
       
-      const htmlBody = this.createNewPodsAlertTemplate(newPods, config);
+      const htmlBody = this.createNewPodsAlertTemplate(newPods, config, clusterHealthStatus);
       
       
       // Use the correct email method
@@ -657,6 +658,73 @@ class KubernetesMonitoringService {
   }
 
 
+  async checkClusterHealth() {
+    try {
+      const snapshot = await this.loadSnapshot();
+      if (!snapshot || !snapshot.pods) {
+        return {
+          allPodsHealthy: false,
+          totalSnapshotPods: 0,
+          healthyPods: 0,
+          totalCurrentPods: 0,
+          missingPods: [],
+          error: 'No snapshot available'
+        };
+      }
+
+      // Get current pods
+      const currentPods = await kubernetesService.getAllPods();
+      
+      // Create map of current pods for quick lookup
+      const currentPodsMap = new Map();
+      currentPods.forEach(pod => {
+        const key = `${pod.namespace}/${pod.name}`;
+        currentPodsMap.set(key, pod);
+      });
+
+      let healthyPods = 0;
+      const missingPods = [];
+
+      // Check each snapshot pod
+      snapshot.pods.forEach(snapshotPod => {
+        const key = `${snapshotPod.namespace}/${snapshotPod.name}`;
+        const currentPod = currentPodsMap.get(key);
+        
+        if (currentPod && this.isPodHealthy(currentPod)) {
+          healthyPods++;
+        } else {
+          missingPods.push({
+            name: snapshotPod.name,
+            namespace: snapshotPod.namespace,
+            currentStatus: currentPod ? currentPod.status : 'Missing'
+          });
+        }
+      });
+
+      const allPodsHealthy = healthyPods === snapshot.pods.length;
+
+      return {
+        allPodsHealthy: allPodsHealthy,
+        totalSnapshotPods: snapshot.pods.length,
+        healthyPods: healthyPods,
+        totalCurrentPods: currentPods.length,
+        missingPods: missingPods,
+        healthPercentage: Math.round((healthyPods / snapshot.pods.length) * 100)
+      };
+
+    } catch (error) {
+      console.error('❌ Failed to check cluster health:', error);
+      return {
+        allPodsHealthy: false,
+        totalSnapshotPods: 0,
+        healthyPods: 0,
+        totalCurrentPods: 0,
+        missingPods: [],
+        error: error.message
+      };
+    }
+  }
+
 createDownAlertTemplate(missingPods, config) {
     const timestamp = new Date().toISOString();
     
@@ -852,7 +920,7 @@ createDownAlertTemplate(missingPods, config) {
   }
 
   // Create HTML template for new pods alert
-  createNewPodsAlertTemplate(newPods, config) {
+  createNewPodsAlertTemplate(newPods, config, clusterHealthStatus) {
     const timestamp = new Date().toISOString();
     
     return `
@@ -867,14 +935,51 @@ createDownAlertTemplate(missingPods, config) {
         
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
-          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 Pods Recovered</h1>
+          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 New Pods Discovered</h1>
           <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
+          ${clusterHealthStatus.allPodsHealthy ? 
+            '<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(40, 167, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">🎉 All Original Pods Healthy</p>' :
+            `<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(220, 53, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">⚠️ ${clusterHealthStatus.healthyPods}/${clusterHealthStatus.totalSnapshotPods} Original Pods Healthy</p>`
+          }
         </div>
 
         <!-- Content -->
         <div style="padding: 30px;">
+          
+          <!-- Cluster Health Status -->
+          <div style="background-color: ${clusterHealthStatus.allPodsHealthy ? '#d4edda' : '#fff3cd'}; border: 1px solid ${clusterHealthStatus.allPodsHealthy ? '#c3e6cb' : '#ffeaa7'}; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
+            <h3 style="color: ${clusterHealthStatus.allPodsHealthy ? '#155724' : '#856404'}; margin: 0 0 10px 0; font-size: 16px;">
+              ${clusterHealthStatus.allPodsHealthy ? '🎉 Cluster Fully Healthy!' : '⚠️ Cluster Health Status'}
+            </h3>
+            <p style="color: ${clusterHealthStatus.allPodsHealthy ? '#155724' : '#856404'}; margin: 0 0 15px 0; line-height: 1.5;">
+              ${clusterHealthStatus.allPodsHealthy ? 
+                'Excellent news! All original pods from the baseline snapshot are running healthy.' :
+                `${clusterHealthStatus.healthyPods} out of ${clusterHealthStatus.totalSnapshotPods} original pods are healthy (${clusterHealthStatus.healthPercentage}%).`
+              }
+            </p>
+            
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Original Snapshot Pods:</span>
+              <strong>${clusterHealthStatus.totalSnapshotPods}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Currently Healthy:</span>
+              <strong style="color: ${clusterHealthStatus.allPodsHealthy ? '#28a745' : '#dc3545'};">${clusterHealthStatus.healthyPods}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Total Current Pods:</span>
+              <strong>${clusterHealthStatus.totalCurrentPods}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #666;">Health Percentage:</span>
+              <strong style="color: ${clusterHealthStatus.allPodsHealthy ? '#28a745' : '#dc3545'};">${clusterHealthStatus.healthPercentage}%</strong>
+            </div>
+          </div>
+
+          <!-- Discovery Alert -->
           <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
-            <h3 style="color: #0c5460; margin: 0 0 10px 0; font-size: 16px;">🔍 Recovery Alert</h3>
+            <h3 style="color: #0c5460; margin: 0 0 10px 0; font-size: 16px;">🔍 Discovery Alert</h3>
+            <p style="color: #0c5460; margin: 0; line-height: 1.5;">New pods have been detected that were not in the original baseline snapshot:</p>
           </div>
 
           <!-- Pod Details Table -->
@@ -892,8 +997,10 @@ createDownAlertTemplate(missingPods, config) {
                 <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
                   <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
                   <td style="padding: 15px; color: #666;">${pod.namespace}</td>
-                  <td style="padding: 15px;">                    
-                      ${pod.status}                    
+                  <td style="padding: 15px;">
+                    <span style="background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+                      ${pod.status}
+                    </span>
                     <br><small style="color: #17a2b8;">Ready: ${pod.ready}</small>
                   </td>
                   <td style="padding: 15px; color: #666;">${pod.age || 'Unknown'}</td>
@@ -906,7 +1013,7 @@ createDownAlertTemplate(missingPods, config) {
           <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
             <h3 style="color: #495057; margin: 0 0 15px 0; font-size: 16px;">📊 Discovery Summary</h3>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-              <span style="color: #666;">Recovered Pods Found:</span>
+              <span style="color: #666;">New Pods Found:</span>
               <strong style="color: #17a2b8;">${newPods.length}</strong>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
@@ -923,11 +1030,15 @@ createDownAlertTemplate(missingPods, config) {
           <div style="background-color: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 20px;">
             <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 16px;">📋 Automatic Actions Taken</h3>
             <ul style="color: #0066cc; margin: 0; padding-left: 20px; line-height: 1.8;">
-              <li>Recovered pods have been automatically added to baseline snapshot</li>
+              <li>New pods have been automatically added to baseline snapshot</li>
               <li>Future monitoring will include these pods</li>
               <li>No manual intervention required</li>
               <li>Pods are healthy and running normally</li>
               <li>Snapshot has been updated with current timestamp</li>
+              ${clusterHealthStatus.allPodsHealthy ? 
+                '<li style="color: #28a745; font-weight: bold;">🎉 Cluster is now fully healthy with all original pods running!</li>' :
+                `<li style="color: #dc3545; font-weight: bold;">⚠️ Note: ${clusterHealthStatus.missingPods.length} original pods still need attention</li>`
+              }
             </ul>
           </div>
         </div>
@@ -946,6 +1057,8 @@ createDownAlertTemplate(missingPods, config) {
     </body>
     </html>
     `;
+  
+  
   }
 }
 
