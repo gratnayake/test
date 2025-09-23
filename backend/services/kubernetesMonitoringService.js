@@ -356,28 +356,15 @@ class KubernetesMonitoringService {
       
       const subject = `🆕 Kubernetes Alert: ${newPods.length} New Pod(s) Discovered`;
       
-      let emailBody = `The following new pods were discovered (not in original snapshot):\n\n`;
+      const htmlBody = this.createNewPodsAlertTemplate(newPods, config);
       
-      newPods.forEach(pod => {
-        emailBody += `Pod: ${pod.name}\n`;
-        emailBody += `Namespace: ${pod.namespace}\n`;
-        emailBody += `Status: ${pod.status}\n`;
-        emailBody += `Ready: ${pod.ready}\n`;
-        emailBody += `Node: ${pod.node}\n`;
-        emailBody += `Age: ${pod.age}\n`;
-        emailBody += `Discovered: ${pod.discoveredAt}\n`;
-        emailBody += `---\n`;
-      });
-      
-      emailBody += `\nTime: ${new Date().toISOString()}\n`;
-      emailBody += `These pods have been automatically added to the baseline snapshot.\n`;
       
       // Use the correct email method
       const mailOptions = {
         from: emailService.getEmailConfig().user,
         to: targetGroup.emails,
         subject: subject,
-        text: emailBody
+        html: htmlBody
       };
       
       await emailService.transporter.sendMail(mailOptions);
@@ -544,32 +531,14 @@ class KubernetesMonitoringService {
       
       const subject = `🚨 Kubernetes Alert: ${missingPods.length} Pod(s) Down`;
 
-      const htmlBody = this.createDownAlertTemplate(missingPods, config);
+      const htmlBody = this.createDownAlertTemplate(missingPods, config);    
       
-      let textBody = `KUBERNETES ALERT: ${missingPods.length} POD(S) DOWN\n\n`;
-      textBody += `The following pods have issues:\n\n`;
-      
-      missingPods.forEach(pod => {
-        textBody += `Pod: ${pod.name}\n`;
-        textBody += `Namespace: ${pod.namespace}\n`;
-        textBody += `Previous Status: ${pod.status}\n`;
-        textBody += `Issue: ${pod.changeType === 'missing' ? 'Pod Missing' : pod.reason}\n`;
-        if (pod.currentStatus) {
-          textBody += `Current Status: ${pod.currentStatus}\n`;
-        }
-        textBody += `Node: ${pod.node}\n`;
-        textBody += `---\n`;
-      });
-      
-      textBody += `\nTime: ${new Date().toISOString()}\n`;
-      textBody += `Cluster: ${config.kubeconfigPath}\n`;
       
       // Use the correct email method
       const mailOptions = {
         from: emailService.getEmailConfig().user,
         to: targetGroup.emails,
         subject: subject,
-        text: textBody,
         html: htmlBody
       };
       
@@ -604,27 +573,15 @@ class KubernetesMonitoringService {
         return;
       }
       const subject = `✅ Kubernetes Recovery: ${recoveredPods.length} Pod(s) Back Online`;
-      
-      let emailBody = `The following pods have recovered:\n\n`;
-      
-      recoveredPods.forEach(pod => {
-        emailBody += `Pod: ${pod.name}\n`;
-        emailBody += `Namespace: ${pod.namespace}\n`;
-        emailBody += `Status: ${pod.currentPod.status}\n`;
-        emailBody += `Ready: ${pod.currentPod.ready}\n`;
-        emailBody += `Node: ${pod.currentPod.node}\n`;
-        emailBody += `---\n`;
-      });
-      
-      emailBody += `\nTime: ${new Date().toISOString()}\n`;
-      emailBody += `All pods are now healthy and have been restored to the baseline snapshot.\n`;
+
+      const htmlBody = this.createRecoveryAlertTemplate(recoveredPods, config);
       
       // Use the correct email method
       const mailOptions = {
         from: emailService.getEmailConfig().user,
         to: targetGroup.emails,
         subject: subject,
-        text: emailBody
+        html: htmlBody
       };
       
       await emailService.transporter.sendMail(mailOptions);
