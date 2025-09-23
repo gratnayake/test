@@ -339,7 +339,36 @@ class KubernetesMonitoringService {
 
   // Check if a pod is considered healthy
   isPodHealthy(pod) {
-    return pod.status === 'Running' && pod.ready;
+    // Check if pod status is Running
+    if (pod.status !== 'Running') {
+      return false;
+    }
+    
+    // Method 1: Check readyContainers vs totalContainers (most reliable)
+    if (pod.readyContainers !== undefined && pod.totalContainers !== undefined) {
+      return pod.readyContainers === pod.totalContainers && pod.totalContainers > 0;
+    }
+    
+    // Method 2: Parse ready field if it's a ratio string like "2/3"
+    if (typeof pod.ready === 'string' && pod.ready.includes('/')) {
+      const [ready, total] = pod.ready.split('/').map(Number);
+      return ready === total && total > 0;
+    }
+    
+    // Method 3: Check if ready is boolean true
+    if (typeof pod.ready === 'boolean') {
+      return pod.ready;
+    }
+    
+    // Method 4: Check readinessRatio property
+    if (pod.readinessRatio && typeof pod.readinessRatio === 'string') {
+      const [ready, total] = pod.readinessRatio.split('/').map(Number);
+      return ready === total && total > 0;
+    }
+    
+    // Default: not healthy if we can't determine
+    console.log(`⚠️ Cannot determine health for pod ${pod.namespace}/${pod.name} - ready: ${pod.ready}, readyContainers: ${pod.readyContainers}, totalContainers: ${pod.totalContainers}`);
+    return false;
   }
 
 
@@ -966,7 +995,7 @@ createDownAlertTemplate(missingPods, config) {
         <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 Pods Recovered</h1>
           <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
-          <p>allPodsHealthy ${clusterHealthStatus.allPodsHealthy}  totalCurrentPods ${clusterHealthStatus.totalCurrentPods} totalSnapshotPods ${clusterHealthStatus.totalSnapshotPods}
+          <p>allPodsHealthy ${clusterHealthStatus.allPodsHealthy}  totalCurrentPods ${clusterHealthStatus.totalCurrentPods} totalSnapshotPods ${clusterHealthStatus.missingPods}
                               
           ${showClusterHealth ? 
             '<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(40, 167, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">🎉 All Original Pods Healthy</p>' :
