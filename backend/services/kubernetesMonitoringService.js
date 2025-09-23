@@ -133,9 +133,9 @@ class KubernetesMonitoringService {
         // For now, just log the new pods - we can implement alerts later
         console.log('New pods detected:', results.newPods.map(p => `${p.namespace}/${p.name}`));
         
-        
-        await this.sendNewPodsAlert(results.newPods);
         await this.addNewPodsToSnapshot(results.newPods);
+        await this.sendNewPodsAlert(results.newPods);
+        
       }
 
       console.log('✅ Health check completed');
@@ -385,8 +385,10 @@ class KubernetesMonitoringService {
       const clusterHealthStatus = await this.checkClusterHealth();
 
       const subject = `🆕 Kubernetes Alert: ${newPods.length} Recovered Pod(s) Discovered`;
+      const actualPodsCount = snapshot.pods.length;
+      const originalCount = snapshot.fullyReadyPodsIncluded;
       
-      const htmlBody = this.createNewPodsAlertTemplate(newPods, config, clusterHealthStatus);
+      const htmlBody = this.createNewPodsAlertTemplate(newPods, config, clusterHealthStatus, actualPodsCount,  originalCount);
       
       
       // Use the correct email method
@@ -977,7 +979,7 @@ createDownAlertTemplate(missingPods, config) {
   }
 
   // Create HTML template for new pods alert
-  createNewPodsAlertTemplate(newPods, config, clusterHealthStatus) {
+  createNewPodsAlertTemplate(newPods, config, clusterHealthStatus, actualPodsCount,  originalCount) {
     const timestamp = new Date().toISOString();
     const showClusterHealth = clusterHealthStatus.allPodsHealthy && 
                               clusterHealthStatus.totalCurrentPods === clusterHealthStatus.totalSnapshotPods;
@@ -995,7 +997,7 @@ createDownAlertTemplate(missingPods, config) {
         <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 Pods Recovered</h1>
           <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
-          <p>allPodsHealthy ${clusterHealthStatus.allPodsHealthy}  totalCurrentPods ${clusterHealthStatus.totalCurrentPods} totalSnapshotPods ${clusterHealthStatus.missingPods}
+          <p>actual count ${actualPodsCount}  originalCount ${originalCount}
                               
           ${showClusterHealth ? 
             '<p style="margin: 10px 0 0 0; font-size: 16px; background-color: rgba(40, 167, 69, 0.2); padding: 8px 15px; border-radius: 20px; display: inline-block;">🎉 All Original Pods Healthy</p>' :
