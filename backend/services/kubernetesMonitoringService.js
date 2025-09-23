@@ -698,10 +698,8 @@ createDownAlertTemplate(missingPods, config) {
                 <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
                   <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
                   <td style="padding: 15px; color: #666;">${pod.namespace}</td>
-                  <td style="padding: 15px;">
-                    <span style="background-color: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
-                      ${pod.changeType === 'missing' ? 'Pod Missing' : pod.reason}
-                    </span>
+                  <td style="padding: 15px;">                    
+                      ${pod.changeType === 'missing' ? 'Pod Missing' : pod.reason}                    
                     ${pod.currentStatus ? `<br><small style="color: #666;">Current: ${pod.currentStatus}</small>` : ''}
                   </td>
                   <td style="padding: 15px; color: #666;">${pod.node || 'Unknown'}</td>
@@ -798,10 +796,8 @@ createDownAlertTemplate(missingPods, config) {
                 <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
                   <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
                   <td style="padding: 15px; color: #666;">${pod.namespace}</td>
-                  <td style="padding: 15px;">
-                    <span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
-                      ${pod.currentPod.status}
-                    </span>
+                  <td style="padding: 15px;">                    
+                      ${pod.currentPod.status}                    
                     <br><small style="color: #28a745;">Ready: ${pod.currentPod.ready}</small>
                   </td>
                   <td style="padding: 15px; color: #666;">${pod.currentPod.node || 'Unknown'}</td>
@@ -871,15 +867,14 @@ createDownAlertTemplate(missingPods, config) {
         
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
-          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 New Pods Discovered</h1>
+          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 Pods Recovered</h1>
           <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
         </div>
 
         <!-- Content -->
         <div style="padding: 30px;">
           <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
-            <h3 style="color: #0c5460; margin: 0 0 10px 0; font-size: 16px;">🔍 Discovery Alert</h3>
-            <p style="color: #0c5460; margin: 0; line-height: 1.5;">New pods have been detected that were not in the original baseline snapshot:</p>
+            <h3 style="color: #0c5460; margin: 0 0 10px 0; font-size: 16px;">🔍 Recovery Alert</h3>
           </div>
 
           <!-- Pod Details Table -->
@@ -897,10 +892,8 @@ createDownAlertTemplate(missingPods, config) {
                 <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
                   <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
                   <td style="padding: 15px; color: #666;">${pod.namespace}</td>
-                  <td style="padding: 15px;">
-                    <span style="background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
-                      ${pod.status}
-                    </span>
+                  <td style="padding: 15px;">                    
+                      ${pod.status}                    
                     <br><small style="color: #17a2b8;">Ready: ${pod.ready}</small>
                   </td>
                   <td style="padding: 15px; color: #666;">${pod.age || 'Unknown'}</td>
@@ -913,7 +906,7 @@ createDownAlertTemplate(missingPods, config) {
           <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
             <h3 style="color: #495057; margin: 0 0 15px 0; font-size: 16px;">📊 Discovery Summary</h3>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-              <span style="color: #666;">New Pods Found:</span>
+              <span style="color: #666;">Recovered Pods Found:</span>
               <strong style="color: #17a2b8;">${newPods.length}</strong>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
@@ -930,7 +923,7 @@ createDownAlertTemplate(missingPods, config) {
           <div style="background-color: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 20px;">
             <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 16px;">📋 Automatic Actions Taken</h3>
             <ul style="color: #0066cc; margin: 0; padding-left: 20px; line-height: 1.8;">
-              <li>New pods have been automatically added to baseline snapshot</li>
+              <li>Recovered pods have been automatically added to baseline snapshot</li>
               <li>Future monitoring will include these pods</li>
               <li>No manual intervention required</li>
               <li>Pods are healthy and running normally</li>
