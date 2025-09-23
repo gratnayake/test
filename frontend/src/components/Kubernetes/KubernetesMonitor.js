@@ -661,16 +661,7 @@ const EnhancedKubernetesMonitor = () => {
     <div style={{ padding: '24px' }}>
       {/* Statistics Cards */}
       {statistics && (
-        <Row gutter={16} style={{ marginBottom: 24 }}>
-          <Col xs={12} sm={6}>
-            <Card>
-              <Statistic
-                title="Total"
-                value={`${pods.length}`}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
+        <Row gutter={16} style={{ marginBottom: 24 }}>          
           <Col xs={12} sm={6}>
             <Card>
               <Statistic
