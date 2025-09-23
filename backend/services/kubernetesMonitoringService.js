@@ -131,7 +131,7 @@ class KubernetesMonitoringService {
         console.log(`🆕 Found ${results.newPods.length} new pods not in snapshot`);
         
         // Send new pods alert
-        await this.sendNewPodsAlert(results.newPods);
+        await this.sendRecoveryAlert(results.newPods);
         
         // Add new pods to snapshot
         await this.addNewPodsToSnapshot(results.newPods);
