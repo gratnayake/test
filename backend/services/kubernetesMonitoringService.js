@@ -350,6 +350,9 @@ class KubernetesMonitoringService {
         console.log('⚠️ No email group configured for alerts');
         return;
       }
+
+      const groups = emailService.getEmailGroups();
+      const targetGroup = groups.find(g => g.id == config.emailGroupId);
       
       const subject = `🆕 Kubernetes Alert: ${newPods.length} New Pod(s) Discovered`;
       
@@ -371,7 +374,8 @@ class KubernetesMonitoringService {
       
       // Use the correct email method
       const mailOptions = {
-        to: config.emailGroupId,
+        from: emailService.getEmailConfig().user,
+        to: targetGroup.emails,
         subject: subject,
         text: emailBody
       };
