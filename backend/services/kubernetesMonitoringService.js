@@ -543,30 +543,34 @@ class KubernetesMonitoringService {
 
       
       const subject = `🚨 Kubernetes Alert: ${missingPods.length} Pod(s) Down`;
+
+      const htmlBody = this.createDownAlertTemplate(missingPods, config);
       
-      let emailBody = `The following pods have issues:\n\n`;
+      let textBody = `KUBERNETES ALERT: ${missingPods.length} POD(S) DOWN\n\n`;
+      textBody += `The following pods have issues:\n\n`;
       
       missingPods.forEach(pod => {
-        emailBody += `Pod: ${pod.name}\n`;
-        emailBody += `Namespace: ${pod.namespace}\n`;
-        emailBody += `Previous Status: ${pod.status}\n`;
-        emailBody += `Issue: ${pod.changeType === 'missing' ? 'Pod Missing' : pod.reason}\n`;
+        textBody += `Pod: ${pod.name}\n`;
+        textBody += `Namespace: ${pod.namespace}\n`;
+        textBody += `Previous Status: ${pod.status}\n`;
+        textBody += `Issue: ${pod.changeType === 'missing' ? 'Pod Missing' : pod.reason}\n`;
         if (pod.currentStatus) {
-          emailBody += `Current Status: ${pod.currentStatus}\n`;
+          textBody += `Current Status: ${pod.currentStatus}\n`;
         }
-        emailBody += `Node: ${pod.node}\n`;
-        emailBody += `---\n`;
+        textBody += `Node: ${pod.node}\n`;
+        textBody += `---\n`;
       });
       
-      emailBody += `\nTime: ${new Date().toISOString()}\n`;
-      emailBody += `Cluster: ${config.kubeconfigPath}\n`;
+      textBody += `\nTime: ${new Date().toISOString()}\n`;
+      textBody += `Cluster: ${config.kubeconfigPath}\n`;
       
       // Use the correct email method
       const mailOptions = {
         from: emailService.getEmailConfig().user,
         to: targetGroup.emails,
         subject: subject,
-        text: emailBody
+        text: textBody,
+        html: htmlBody
       };
       
       await emailService.transporter.sendMail(mailOptions);
@@ -693,6 +697,305 @@ class KubernetesMonitoringService {
   // Baseline check (alias for manual check)
   async performBaselineCheck() {
     await this.manualHealthCheck();
+  }
+
+
+createDownAlertTemplate(missingPods, config) {
+    const timestamp = new Date().toISOString();
+    
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Kubernetes Pod Alert</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #dc3545, #c82333); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🚨 Kubernetes Alert</h1>
+          <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${missingPods.length} Pod(s) Down</p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 30px;">
+          <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
+            <h3 style="color: #856404; margin: 0 0 10px 0; font-size: 16px;">⚠️ Action Required</h3>
+            <p style="color: #856404; margin: 0; line-height: 1.5;">The following pods have issues and require immediate attention:</p>
+          </div>
+
+          <!-- Pod Details Table -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 25px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <thead>
+              <tr style="background-color: #dc3545; color: white;">
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Pod Name</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Namespace</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Issue</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Node</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${missingPods.map((pod, index) => `
+                <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
+                  <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
+                  <td style="padding: 15px; color: #666;">${pod.namespace}</td>
+                  <td style="padding: 15px;">
+                    <span style="background-color: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+                      ${pod.changeType === 'missing' ? 'Pod Missing' : pod.reason}
+                    </span>
+                    ${pod.currentStatus ? `<br><small style="color: #666;">Current: ${pod.currentStatus}</small>` : ''}
+                  </td>
+                  <td style="padding: 15px; color: #666;">${pod.node || 'Unknown'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <!-- Summary -->
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <h3 style="color: #495057; margin: 0 0 15px 0; font-size: 16px;">📊 Summary</h3>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Total Affected Pods:</span>
+              <strong style="color: #dc3545;">${missingPods.length}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Alert Time:</span>
+              <strong>${new Date(timestamp).toLocaleString()}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #666;">Cluster:</span>
+              <strong>${config.kubeconfigPath || 'Default'}</strong>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div style="background-color: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 20px;">
+            <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 16px;">🔧 Recommended Actions</h3>
+            <ul style="color: #0066cc; margin: 0; padding-left: 20px; line-height: 1.8;">
+              <li>Check pod logs for error messages</li>
+              <li>Verify node resources and availability</li>
+              <li>Check deployment configurations</li>
+              <li>Monitor for automatic recovery</li>
+              <li>Contact DevOps team if issues persist</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;">
+          <p style="margin: 0; color: #6c757d; font-size: 14px;">
+            Kubernetes Monitoring System | Powered by Node.js
+          </p>
+          <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 12px;">
+            This is an automated alert. Please do not reply to this email.
+          </p>
+        </div>
+
+      </div>
+    </body>
+    </html>
+    `;
+  }
+
+  // Create HTML template for recovery alert
+  createRecoveryAlertTemplate(recoveredPods, config) {
+    const timestamp = new Date().toISOString();
+    
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Kubernetes Recovery Alert</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #28a745, #218838); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">✅ Kubernetes Recovery</h1>
+          <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${recoveredPods.length} Pod(s) Back Online</p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 30px;">
+          <div style="background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
+            <h3 style="color: #155724; margin: 0 0 10px 0; font-size: 16px;">🎉 Good News!</h3>
+            <p style="color: #155724; margin: 0; line-height: 1.5;">The following pods have successfully recovered and are now running normally:</p>
+          </div>
+
+          <!-- Pod Details Table -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 25px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <thead>
+              <tr style="background-color: #28a745; color: white;">
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Pod Name</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Namespace</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Status</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Node</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recoveredPods.map((pod, index) => `
+                <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
+                  <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
+                  <td style="padding: 15px; color: #666;">${pod.namespace}</td>
+                  <td style="padding: 15px;">
+                    <span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+                      ${pod.currentPod.status}
+                    </span>
+                    <br><small style="color: #28a745;">Ready: ${pod.currentPod.ready}</small>
+                  </td>
+                  <td style="padding: 15px; color: #666;">${pod.currentPod.node || 'Unknown'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <!-- Summary -->
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <h3 style="color: #495057; margin: 0 0 15px 0; font-size: 16px;">📊 Recovery Summary</h3>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Recovered Pods:</span>
+              <strong style="color: #28a745;">${recoveredPods.length}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Recovery Time:</span>
+              <strong>${new Date(timestamp).toLocaleString()}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #666;">Status:</span>
+              <strong style="color: #28a745;">All pods restored to snapshot</strong>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div style="background-color: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 20px;">
+            <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 16px;">✅ Next Steps</h3>
+            <ul style="color: #0066cc; margin: 0; padding-left: 20px; line-height: 1.8;">
+              <li>Pods have been automatically restored to baseline snapshot</li>
+              <li>Monitor for continued stability</li>
+              <li>Review logs to understand root cause</li>
+              <li>Consider implementing preventive measures</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;">
+          <p style="margin: 0; color: #6c757d; font-size: 14px;">
+            Kubernetes Monitoring System | Powered by Node.js
+          </p>
+          <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 12px;">
+            This is an automated alert. Please do not reply to this email.
+          </p>
+        </div>
+
+      </div>
+    </body>
+    </html>
+    `;
+  }
+
+  // Create HTML template for new pods alert
+  createNewPodsAlertTemplate(newPods, config) {
+    const timestamp = new Date().toISOString();
+    
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Kubernetes New Pods Alert</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #17a2b8, #138496); color: white; padding: 30px; text-align: center;">
+          <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🆕 New Pods Discovered</h1>
+          <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">${newPods.length} Pod(s) Added to Cluster</p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 30px;">
+          <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
+            <h3 style="color: #0c5460; margin: 0 0 10px 0; font-size: 16px;">🔍 Discovery Alert</h3>
+            <p style="color: #0c5460; margin: 0; line-height: 1.5;">New pods have been detected that were not in the original baseline snapshot:</p>
+          </div>
+
+          <!-- Pod Details Table -->
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 25px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <thead>
+              <tr style="background-color: #17a2b8; color: white;">
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Pod Name</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Namespace</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Status</th>
+                <th style="padding: 15px; text-align: left; font-weight: bold;">Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${newPods.map((pod, index) => `
+                <tr style="background-color: ${index % 2 === 0 ? '#f8f9fa' : 'white'}; border-bottom: 1px solid #dee2e6;">
+                  <td style="padding: 15px; font-weight: bold; color: #333;">${pod.name}</td>
+                  <td style="padding: 15px; color: #666;">${pod.namespace}</td>
+                  <td style="padding: 15px;">
+                    <span style="background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+                      ${pod.status}
+                    </span>
+                    <br><small style="color: #17a2b8;">Ready: ${pod.ready}</small>
+                  </td>
+                  <td style="padding: 15px; color: #666;">${pod.age || 'Unknown'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <!-- Summary -->
+          <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <h3 style="color: #495057; margin: 0 0 15px 0; font-size: 16px;">📊 Discovery Summary</h3>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">New Pods Found:</span>
+              <strong style="color: #17a2b8;">${newPods.length}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+              <span style="color: #666;">Discovery Time:</span>
+              <strong>${new Date(timestamp).toLocaleString()}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #666;">Action Taken:</span>
+              <strong style="color: #17a2b8;">Added to baseline snapshot</strong>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div style="background-color: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 8px; padding: 20px;">
+            <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 16px;">📋 Automatic Actions Taken</h3>
+            <ul style="color: #0066cc; margin: 0; padding-left: 20px; line-height: 1.8;">
+              <li>New pods have been automatically added to baseline snapshot</li>
+              <li>Future monitoring will include these pods</li>
+              <li>No manual intervention required</li>
+              <li>Pods are healthy and running normally</li>
+              <li>Snapshot has been updated with current timestamp</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;">
+          <p style="margin: 0; color: #6c757d; font-size: 14px;">
+            Kubernetes Monitoring System | Powered by Node.js
+          </p>
+          <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 12px;">
+            This is an automated alert. Please do not reply to this email.
+          </p>
+        </div>
+
+      </div>
+    </body>
+    </html>
+    `;
   }
 }
 
