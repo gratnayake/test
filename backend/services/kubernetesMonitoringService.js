@@ -953,7 +953,7 @@ createDownAlertTemplate(missingPods, config) {
             </h3>
             <p style="color: ${clusterHealthStatus.allPodsHealthy ? '#155724' : '#856404'}; margin: 0 0 15px 0; line-height: 1.5;">
               ${clusterHealthStatus.allPodsHealthy ? 
-                'Excellent news! All original pods from the baseline snapshot are running healthy.' :
+                'All original pods from the baseline snapshot are running healthy.' :
                 `${clusterHealthStatus.healthyPods} out of ${clusterHealthStatus.totalSnapshotPods} original pods are healthy (${clusterHealthStatus.healthPercentage}%).`
               }
             </p>
@@ -965,11 +965,7 @@ createDownAlertTemplate(missingPods, config) {
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
               <span style="color: #666;">Currently Healthy:</span>
               <strong style="color: ${clusterHealthStatus.allPodsHealthy ? '#28a745' : '#dc3545'};">${clusterHealthStatus.healthyPods}</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-              <span style="color: #666;">Total Current Pods:</span>
-              <strong>${clusterHealthStatus.totalCurrentPods}</strong>
-            </div>
+            </div>            
             <div style="display: flex; justify-content: space-between;">
               <span style="color: #666;">Health Percentage:</span>
               <strong style="color: ${clusterHealthStatus.allPodsHealthy ? '#28a745' : '#dc3545'};">${clusterHealthStatus.healthPercentage}%</strong>
