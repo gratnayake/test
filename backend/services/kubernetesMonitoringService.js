@@ -375,6 +375,7 @@ class KubernetesMonitoringService {
   async sendNewPodsAlert(newPods) {
     try {
       const config = kubernetesConfigService.getConfig();
+      const snapshot = await this.loadSnapshot();
       if (!config.emailGroupId) {
         console.log('⚠️ No email group configured for alerts');
         return;
@@ -1077,7 +1078,7 @@ createDownAlertTemplate(missingPods, config) {
         <!-- Footer -->
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;">
           <p style="margin: 0; color: #6c757d; font-size: 14px;">
-            Kubernetes Monitoring System | Powered by Node.js
+            Uptime Monitoring System | © tSunami Solutions 2025
           </p>
           <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 12px;">
             This is an automated alert. Please do not reply to this email.
