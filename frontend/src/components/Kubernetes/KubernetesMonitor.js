@@ -806,7 +806,7 @@ const EnhancedKubernetesMonitor = () => {
       </Card>
 
       {/* Enhanced Pod Table */}
-      <Card title={`Pod Lifecycle Monitor (${pods.length} pods)`}>
+      <Card title={`Pod Lifecycle Monitor`}>
         <Table
           columns={enhancedColumns}
           dataSource={pods}
