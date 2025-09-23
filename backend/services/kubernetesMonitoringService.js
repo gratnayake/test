@@ -109,20 +109,32 @@ class KubernetesMonitoringService {
         }
       }
 
-      // Check for recovered pods
-      const recoveredPods = await this.checkForRecoveredPods(currentPods);
+      // Check for recovered pods and new pods
+      const results = await this.checkForRecoveredPods(currentPods);
       
-      if (recoveredPods.length > 0) {
-        console.log(`✅ Found ${recoveredPods.length} recovered pods`);
+      // Handle recovered pods
+      if (results.recovered.length > 0) {
+        console.log(`✅ Found ${results.recovered.length} recovered pods`);
         
         // Send recovery email
-        await this.sendRecoveryAlert(recoveredPods);
+        await this.sendRecoveryAlert(results.recovered);
         
         // Update snapshot with recovered pods
-        await this.updateSnapshotWithRecoveredPods(recoveredPods, currentPods);
+        await this.updateSnapshotWithRecoveredPods(results.recovered, currentPods);
         
         // Remove recovered pods from delta
-        await this.removeFromDelta(recoveredPods);
+        await this.removeFromDelta(results.recovered);
+      }
+      
+      // Handle new pods
+      if (results.newPods.length > 0) {
+        console.log(`🆕 Found ${results.newPods.length} new pods not in snapshot`);
+        
+        // Send new pods alert
+        await this.sendNewPodsAlert(results.newPods);
+        
+        // Add new pods to snapshot
+        await this.addNewPodsToSnapshot(results.newPods);
       }
 
       console.log('✅ Health check completed');
@@ -220,39 +232,76 @@ class KubernetesMonitoringService {
     return reasons.join(', ');
   }
 
-  // Check for pods that have recovered (exist in delta but are now healthy)
+  // Check for recovered pods (from delta) AND new pods (not in snapshot)
   async checkForRecoveredPods(currentPods) {
     try {
+      const results = {
+        recovered: [],
+        newPods: []
+      };
+      
+      // Check for recovered pods from delta
       const delta = await this.loadDelta();
-      if (!delta || !delta.pods || delta.pods.length === 0) {
-        return [];
-      }
-      
-      const currentMap = new Map();
-      currentPods.forEach(pod => {
-        const key = `${pod.namespace}/${pod.name}`;
-        currentMap.set(key, pod);
-      });
-      
-      const recovered = [];
-      
-      for (const deltaPod of delta.pods) {
-        const key = `${deltaPod.namespace}/${deltaPod.name}`;
-        const currentPod = currentMap.get(key);
+      if (delta && delta.pods && delta.pods.length > 0) {
+        const currentMap = new Map();
+        currentPods.forEach(pod => {
+          const key = `${pod.namespace}/${pod.name}`;
+          currentMap.set(key, pod);
+        });
         
-        if (currentPod && this.isPodHealthy(currentPod)) {
-          recovered.push({
-            ...deltaPod,
-            currentPod: currentPod
-          });
+        for (const deltaPod of delta.pods) {
+          const key = `${deltaPod.namespace}/${deltaPod.name}`;
+          const currentPod = currentMap.get(key);
+          
+          if (currentPod && this.isPodHealthy(currentPod)) {
+            results.recovered.push({
+              ...deltaPod,
+              currentPod: currentPod
+            });
+          }
         }
       }
       
-      return recovered;
+      // Check for completely new pods not in original snapshot
+      const snapshot = await this.loadSnapshot();
+      if (snapshot && snapshot.pods) {
+        const snapshotMap = new Map();
+        snapshot.pods.forEach(pod => {
+          const key = `${pod.namespace}/${pod.name}`;
+          snapshotMap.set(key, pod);
+        });
+        
+        for (const currentPod of currentPods) {
+          const key = `${currentPod.namespace}/${currentPod.name}`;
+          
+          // If pod is healthy AND not in snapshot AND not already in delta
+          if (!snapshotMap.has(key) && this.isPodHealthy(currentPod)) {
+            // Check if it's not already in delta (to avoid duplicates)
+            const isInDelta = delta && delta.pods && delta.pods.some(dp => 
+              dp.namespace === currentPod.namespace && dp.name === currentPod.name
+            );
+            
+            if (!isInDelta) {
+              results.newPods.push({
+                name: currentPod.name,
+                namespace: currentPod.namespace,
+                status: currentPod.status,
+                restartCount: currentPod.restartCount || 0,
+                ready: currentPod.ready,
+                age: currentPod.age,
+                node: currentPod.node || 'unknown',
+                discoveredAt: new Date().toISOString()
+              });
+            }
+          }
+        }
+      }
+      
+      return results;
       
     } catch (error) {
-      console.error('❌ Error checking for recovered pods:', error);
-      return [];
+      console.error('❌ Error checking for recovered/new pods:', error);
+      return { recovered: [], newPods: [] };
     }
   }
 
@@ -365,6 +414,10 @@ class KubernetesMonitoringService {
   async sendDownAlert(missingPods) {
     try {
       const config = kubernetesConfigService.getConfig();
+      if (!config.emailGroupId) {
+        console.log('⚠️ No email group configured for alerts');
+        return;
+      }
 
       const groups = emailService.getEmailGroups();
       const targetGroup = groups.find(g => g.id == config.emailGroupId);
@@ -373,7 +426,7 @@ class KubernetesMonitoringService {
         console.log('❌ Email group not found or disabled');
         return;
       }
-      
+
       
       const subject = `🚨 Kubernetes Alert: ${missingPods.length} Pod(s) Down`;
       
@@ -396,7 +449,8 @@ class KubernetesMonitoringService {
       
       // Use the correct email method
       const mailOptions = {
-        to: targetGroup.emails,
+        from: emailService.getEmailConfig().user,      
+        to: targetGroup.emailGroupId,
         subject: subject,
         text: emailBody
       };
@@ -413,11 +467,8 @@ class KubernetesMonitoringService {
   async sendRecoveryAlert(recoveredPods) {
     try {
       const config = kubernetesConfigService.getConfig();
-      const groups = emailService.getEmailGroups();
-      const targetGroup = groups.find(g => g.id == config.emailGroupId);
-      
-      if (!targetGroup || !targetGroup.enabled) {
-        console.log('❌ Email group not found or disabled');
+      if (!config.emailGroupId) {
+        console.log('⚠️ No email group configured for alerts');
         return;
       }
       
@@ -437,8 +488,10 @@ class KubernetesMonitoringService {
       emailBody += `\nTime: ${new Date().toISOString()}\n`;
       emailBody += `All pods are now healthy and have been restored to the baseline snapshot.\n`;
       
+      // Use the correct email method
       const mailOptions = {
-        to: targetGroup.emails,
+        from: emailService.getEmailConfig().user,      
+        to: targetGroup.emailGroupId,
         subject: subject,
         text: emailBody
       };
